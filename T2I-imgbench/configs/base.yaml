@@ -1,0 +1,55 @@
+# T2I-imgbench 公共配置：路径 + judge 模型 + benchmark 注册表
+# 所有路径均为相对项目根目录的相对路径（scripts/common.py 会解析为绝对路径），
+# 需要迁移机器/目录时改这里即可；模型 yaml 只放生图相关配置。
+
+paths:
+  benchmarks_root: Benchmarks        # 各 benchmark 官方 repo / 数据（见 README「数据准备」）
+  models_root: Models                # judge 模型与本地生图权重（见 README「模型准备」）
+  output_root: outputs               # 生图与评分输出（gitignore）
+  cache_root: outputs/cache          # HF/modelscope 杂项缓存（大模型已固定在 Models/）
+  logs_dir: outputs/logs             # slurm 作业日志（#SBATCH -o 指向这里）
+
+judges:
+  geneval:
+    detector_checkpoint: Models/geneval                                  # Mask2Former (mmdet3 版) 所在目录
+    clip_checkpoint: Models/openclip/open_clip_pytorch_model.bin
+  longtext:
+    ocr_model: Models/Qwen2.5-VL-7B-Instruct                             # LongText-Bench OCR judge
+  dpg:
+    vqa_model: Models/mplug                                              # DPG-Bench mPLUG VQA judge
+  qib:
+    judge_model: Models/Q-Judger                                         # Qwen-Image-Bench judge
+
+# benchmark 注册表：键名与脚本 --benchmark 取值一致。
+# repo = 官方评测 repo 子路径（相对 benchmarks_root）
+# prompts = prompt 文件子路径（相对 benchmarks_root；dpg 为 prompts 目录）
+# n_samples = 官方口径每 prompt 生图张数（脚本可用 --n-samples 覆盖）
+benchmarks:
+  geneval:
+    repo: geneval
+    prompts: geneval/prompts/evaluation_metadata.jsonl
+    n_samples: 4
+  dpg:
+    repo: DPG-Bench/ELLA
+    prompts: DPG-Bench/ELLA/dpg_bench/prompts
+    n_samples: 4
+  longtext_en:
+    repo: LongText-Bench/X-Omni
+    workdir: LongText-Bench/X-Omni/textbench   # 官方 evaluate_text_reward.py 在此目录内执行
+    prompts: LongText-Bench/X-Omni/textbench/text_prompts.jsonl
+    n_samples: 4
+  longtext_zh:
+    repo: LongText-Bench/X-Omni
+    workdir: LongText-Bench/X-Omni/textbench
+    prompts: LongText-Bench/X-Omni/textbench/text_prompts_zh.jsonl
+    n_samples: 4
+  qwenimagebench_cn:
+    repo: Qwen-Image-Bench-gh
+    prompts: Qwen-Image-Bench/qwen_image_bench_hf_v0518.jsonl   # HF 数据集（双语 1000 条）
+    released_images: Qwen-Image-Bench/images   # 官方发布参考图（复现榜单用）
+    n_samples: 1
+  qwenimagebench_en:
+    repo: Qwen-Image-Bench-gh
+    prompts: Qwen-Image-Bench/qwen_image_bench_hf_v0518.jsonl
+    released_images: Qwen-Image-Bench/images
+    n_samples: 1

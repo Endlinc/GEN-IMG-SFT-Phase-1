@@ -1,0 +1,17 @@
+model_name: z_image
+
+# 本地 Z-Image 权重，路径相对项目根（Models/ 下，见 README「模型准备」）
+model:
+  ckpt_dir: Models/Z-Image/ckpts/Z-Image   # 底座模型（非 Turbo），bf16 约 20.5G
+  repo_src: Models/Z-Image/src             # 原 repo 代码，注入 sys.path 后直接调用
+  dtype: bfloat16                  # 全量上 GPU 约需 22-24G 显存，需 24G+ 显卡
+  compile: false                   # torch.compile，H100/H800 可开，首次编译慢
+  attn_backend: _native_flash      # 可被环境变量 ZIMAGE_ATTENTION 覆盖
+
+generation:
+  height: 1024
+  width: 1024
+  num_inference_steps: 50          # 底座模型官方推荐 28-50（README 示例为 50）
+  guidance_scale: 4.0              # 底座支持 CFG，官方推荐 3.0-5.0
+  cfg_normalization: false
+  negative_prompt: ""

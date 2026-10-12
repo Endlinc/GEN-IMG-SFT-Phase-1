@@ -1,0 +1,636 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>筛选结果查看器</title>
+  <style>
+    :root {
+      --bg: #111318;
+      --panel: #1b1e27;
+      --line: #2c3140;
+      --text: #e8eaed;
+      --muted: #9aa3b2;
+      --accent: #7aa2f7;
+      --kept: #3d9a6a;
+      --deleted: #c45c5c;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    body { display: flex; flex-direction: column; }
+    header {
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .row {
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 10px 12px;
+      align-items: center;
+      overflow-x: auto;
+      padding-bottom: 12px;
+      scrollbar-width: thin;
+      scrollbar-color: #3a4050 #111318;
+    }
+    .row::-webkit-scrollbar { height: 8px; }
+    .row::-webkit-scrollbar-track { background: #111318; }
+    .row::-webkit-scrollbar-thumb {
+      background: #3a4050;
+      border-radius: 4px;
+    }
+    .field {
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 0 auto;
+      white-space: nowrap;
+    }
+    select, input, button {
+      background: #10131a;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font: inherit;
+    }
+    .field select {
+      width: var(--sel-w);
+      min-width: var(--sel-w);
+      max-width: var(--sel-w);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    #dataset { --sel-w: 200px; }
+    #version { --sel-w: 250px; }
+    #kind { --sel-w: 148px; }
+    #subset { --sel-w: 200px; }
+    button { cursor: pointer; flex: 0 0 auto; }
+    button:hover, select:hover { border-color: var(--accent); }
+    button:disabled { opacity: 0.45; cursor: default; }
+    main {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 420px;
+    }
+    .stage {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      min-width: 0;
+      background: #0c0e13;
+    }
+    .stage img {
+      max-width: 100%;
+      max-height: calc(100vh - 170px);
+      object-fit: contain;
+      border-radius: 6px;
+    }
+    .placeholder {
+      color: var(--muted);
+      text-align: center;
+      padding: 24px;
+    }
+    aside {
+      border-left: 1px solid var(--line);
+      padding: 14px 16px;
+      overflow: auto;
+      background: var(--panel);
+      scrollbar-width: thin;
+      scrollbar-color: #3a4050 #111318;
+    }
+    aside::-webkit-scrollbar { width: 8px; }
+    aside::-webkit-scrollbar-track { background: #111318; }
+    aside::-webkit-scrollbar-thumb {
+      background: #3a4050;
+      border-radius: 4px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      margin-right: 6px;
+    }
+    .badge.kept { background: #1c3a2b; color: #8ee0b0; }
+    .badge.deleted { background: #3d2222; color: #f0a0a0; }
+    .badge.review { background: #3a3320; color: #e6c97a; }
+    .reason-box { margin-bottom: 16px; }
+    .reason-box textarea {
+      width: 100%;
+      min-height: 90px;
+      resize: vertical;
+      background: #10131a;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px;
+      font: inherit;
+    }
+    .reason-box textarea:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    #reasonHint { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    button.review-btn { border-color: #c9a227; color: #e6c97a; }
+    #reviewMsg { color: var(--muted); white-space: nowrap; }
+    #counter {
+      white-space: nowrap;
+      flex: 0 0 auto;
+    }
+    h2 { font-size: 14px; margin: 16px 0 6px; color: var(--muted); font-weight: 600; }
+    h2:first-child { margin-top: 0; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; }
+    .caption { white-space: pre-wrap; word-break: break-word; }
+    dl { margin: 0; }
+    dt { color: var(--muted); margin-top: 8px; }
+    dd { margin: 2px 0 0; word-break: break-word; }
+    .nav input { width: 88px; }
+    .status-err { color: #f0a0a0; }
+    @media (max-width: 900px) {
+      main { grid-template-columns: 1fr; }
+      aside { border-left: 0; border-top: 1px solid var(--line); max-height: 40vh; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="row">
+      <label class="field">数据集
+        <select id="dataset"></select>
+      </label>
+      <label class="field" id="versionWrap">版本
+        <select id="version"></select>
+      </label>
+      <label class="field">范围
+        <select id="kind">
+          <option value="all">全部</option>
+          <option value="images" selected>保留</option>
+          <option value="deleted">删除</option>
+          <option value="review_delete">检查后删除</option>
+          <option value="review_keep">检查后保留</option>
+        </select>
+      </label>
+      <label class="field" id="subsetWrap">子集
+        <select id="subset"></select>
+      </label>
+      <button type="button" id="prevBtn">上一张</button>
+      <button type="button" id="nextBtn">下一张</button>
+      <label class="field nav">跳到
+        <input id="jump" type="number" min="1" step="1" />
+      </label>
+      <button type="button" id="goBtn">前往</button>
+      <button type="button" id="refreshBtn">刷新索引</button>
+      <button type="button" id="reviewBtn" class="review-btn" hidden>该图需删除</button>
+      <span id="reviewMsg"></span>
+      <span id="counter">—</span>
+    </div>
+  </header>
+  <main>
+    <section class="stage" id="stage">
+      <div class="placeholder" id="empty">先选择数据集和版本</div>
+      <img id="photo" alt="" hidden />
+    </section>
+    <aside>
+      <div class="reason-box">
+        <h2>人工删除原因</h2>
+        <textarea id="checkReason" disabled placeholder="先点「该图需删除」，再填写为什么要删这张图"></textarea>
+        <div id="reasonHint">未标记删除，输入框已锁定</div>
+      </div>
+      <div id="metaBox"></div>
+    </aside>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const state = {
+      catalog: null,
+      index: 0,
+      count: 0,
+      subsets: [],
+      item: null,
+      pollTimer: null,
+    };
+
+    function syncSelectTitle(id) {
+      const sel = $(id);
+      const opt = sel.options[sel.selectedIndex];
+      sel.title = opt ? opt.text : "";
+    }
+
+    function selected() {
+      return {
+        dataset: $("dataset").value,
+        version: $("version").value,
+        kind: $("kind").value,
+        subset: $("subset").value || "",
+      };
+    }
+
+    function versionId(v) {
+      return typeof v === "string" ? v : (v && v.id) || "";
+    }
+
+    function versionLabel(v) {
+      return typeof v === "string" ? v : (v && v.label) || versionId(v);
+    }
+
+    function subsetId(s) {
+      return typeof s === "string" ? s : (s && s.id) || "";
+    }
+
+    function subsetLabel(s) {
+      return typeof s === "string" ? s : (s && s.label) || subsetId(s);
+    }
+
+    function isSamplecheckVersion() {
+      return ($("version").value || "").includes("samplecheck");
+    }
+
+    function fillKinds() {
+      const sel = $("kind");
+      const prev = sel.value;
+      const opts = isSamplecheckVersion()
+        ? [["images", "保留"], ["review_delete", "检查后删除"]]
+        : [
+            ["all", "全部"],
+            ["images", "保留"],
+            ["deleted", "删除"],
+            ["review_delete", "检查后删除"],
+            ["review_keep", "检查后保留"],
+          ];
+      sel.innerHTML = "";
+      opts.forEach(([value, label]) => sel.add(new Option(label, value)));
+      const ids = opts.map(([value]) => value);
+      sel.value = ids.includes(prev) ? prev : "images";
+      syncSelectTitle("kind");
+    }
+
+    function fillVersions() {
+      const ds = (state.catalog.datasets || []).find((d) => d.id === $("dataset").value);
+      const sel = $("version");
+      sel.innerHTML = "";
+      const versions = (ds && ds.versions) || [];
+      if (!versions.length) {
+        sel.add(new Option("—", ""));
+        sel.disabled = true;
+        sel.title = "";
+        fillKinds();
+        return;
+      }
+      sel.disabled = false;
+      const prefer = versions.find((v) => versionId(v) === "__root__")
+        || versions.find((v) => versionId(v).includes("formal"))
+        || versions[0];
+      versions.forEach((v) => sel.add(new Option(versionLabel(v), versionId(v))));
+      sel.value = versionId(prefer);
+      sel.title = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : "";
+      fillKinds();
+    }
+
+    function fillSubsets(subsets, preferFirst) {
+      const sel = $("subset");
+      const prev = sel.value;
+      const list = subsets || [];
+      const ids = list.map(subsetId);
+      sel.innerHTML = "";
+      if (!ids.length) {
+        sel.add(new Option("—", ""));
+        sel.disabled = true;
+        sel.title = "";
+        return;
+      }
+      sel.disabled = false;
+      sel.add(new Option("全部子集", ""));
+      list.forEach((s) => sel.add(new Option(subsetLabel(s), subsetId(s))));
+      if (prev && ids.includes(prev)) {
+        sel.value = prev;
+      } else if (preferFirst) {
+        sel.value = ids.find((id) => id.includes("curated")) || ids[0];
+      }
+      sel.title = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : "";
+    }
+
+    function renderMeta(item) {
+      if (!item || item.empty) {
+        $("metaBox").innerHTML = "<p class='placeholder'>这个范围里没有图片。</p>";
+        return;
+      }
+      let badge = '<span class="badge kept">保留</span>';
+      if (item.kind === "deleted") badge = '<span class="badge deleted">删除</span>';
+      if (item.kind === "review_delete") badge = '<span class="badge review">检查后删除</span>';
+      if (item.kind === "review_keep") badge = '<span class="badge review">检查后保留</span>';
+      if (item.reviewed) badge += '<span class="badge review">已复核</span>';
+      const rows = Object.entries(item.metadata || {})
+        .map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(String(v))}</dd>`)
+        .join("");
+      $("metaBox").innerHTML = `
+        <div>${badge}${item.subset ? `<span class="badge kept">${escapeHtml(item.subset)}</span>` : ""}</div>
+        <h2>文件</h2>
+        <div class="mono">${escapeHtml(item.relpath)}</div>
+        ${item.filter_name || item.reason ? `<h2>删除原因</h2><div>${escapeHtml(item.filter_name || "")} / ${escapeHtml(item.reason || "")}</div>` : ""}
+        <h2>文本 / caption</h2>
+        <div class="caption">${item.caption ? escapeHtml(item.caption) : "（无 sidecar 文本）"}</div>
+        <h2>其它字段</h2>
+        <dl>${rows || "<dd>（无）</dd>"}</dl>
+      `;
+    }
+
+    function escapeHtml(s) {
+      return String(s)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+    }
+
+    function setBusy(msg) {
+      $("counter").textContent = msg;
+      $("empty").hidden = false;
+      $("empty").textContent = msg;
+      $("photo").hidden = true;
+    }
+
+    async function loadCatalog() {
+      const res = await fetch("/api/catalog");
+      state.catalog = await res.json();
+      const sel = $("dataset");
+      sel.innerHTML = "";
+      (state.catalog.datasets || []).forEach((d) => {
+        const label = d.exists ? d.label : `${d.label}（目录不存在）`;
+        sel.add(new Option(label, d.id));
+      });
+      if ([...sel.options].some((o) => o.value === "alchemist")) sel.value = "alchemist";
+      const ds = (state.catalog.datasets || []).find((d) => d.id === sel.value);
+      fillVersions();
+      fillSubsets((ds && ds.subsets) || [], true);
+      syncSelectTitle("dataset");
+    }
+
+    async function requestIndex(refresh) {
+      const q = selected();
+      if (!q.dataset || !q.version) {
+        setBusy("请选择数据集和版本");
+        return null;
+      }
+      const params = new URLSearchParams({ ...q });
+      if (refresh) params.set("refresh", "1");
+      const res = await fetch("/api/index?" + params.toString());
+      return res.json();
+    }
+
+    async function ensureIndex(refresh) {
+      setBusy(refresh ? "正在重新扫描目录…" : "正在准备索引…");
+      let info = await requestIndex(refresh);
+      if (!info) return false;
+      if (info.error && info.status === "error") {
+        setBusy("索引失败：" + info.error);
+        return false;
+      }
+      while (info.status === "building") {
+        setBusy("正在扫描目录（大目录首次可能要一两分钟）…");
+        await new Promise((r) => setTimeout(r, 800));
+        info = await requestIndex(false);
+      }
+      if (info.status !== "ready") {
+        setBusy(info.error ? ("索引失败：" + info.error) : "索引失败");
+        return false;
+      }
+      state.count = info.count || 0;
+      const ds = (state.catalog.datasets || []).find((d) => d.id === $("dataset").value);
+      state.subsets = (ds && ds.subsets && ds.subsets.length)
+        ? ds.subsets
+        : (info.subsets || []);
+      fillSubsets(state.subsets, false);
+      if (state.index >= state.count) state.index = 0;
+      $("jump").max = String(Math.max(state.count, 1));
+      return true;
+    }
+
+    async function showCurrent() {
+      const q = selected();
+      if (!state.count) {
+        $("counter").textContent = "0 / 0";
+        $("empty").hidden = false;
+        $("empty").textContent = "这个范围里没有图片";
+        $("photo").hidden = true;
+        renderMeta({ empty: true });
+        syncReviewButton(null);
+        return;
+      }
+      const params = new URLSearchParams({ ...q, i: String(state.index) });
+      const res = await fetch("/api/item?" + params.toString());
+      const item = await res.json();
+      if (item.error) {
+        setBusy(item.error);
+        return;
+      }
+      state.item = item;
+      $("counter").textContent = `${item.index + 1} / ${item.count}`;
+      $("jump").value = String(item.index + 1);
+      renderMeta(item);
+      syncReviewButton(item);
+      if (item.has_image) {
+        $("photo").src = "/file?" + new URLSearchParams({
+          dataset: q.dataset,
+          version: q.version,
+          relpath: item.relpath,
+        }).toString();
+        $("photo").hidden = false;
+        $("empty").hidden = true;
+        prefetch(item.index + 1);
+      } else {
+        $("photo").hidden = true;
+        $("empty").hidden = false;
+        $("empty").textContent = "这条记录没有图片文件（常见于 missing_image）";
+      }
+    }
+
+    function prefetch(nextIndex) {
+      if (nextIndex >= state.count) return;
+      const q = selected();
+      fetch("/api/item?" + new URLSearchParams({ ...q, i: String(nextIndex) }))
+        .then((r) => r.json())
+        .then((item) => {
+          if (!item || !item.has_image) return;
+          const img = new Image();
+          img.src = "/file?" + new URLSearchParams({
+            dataset: q.dataset,
+            version: q.version,
+            relpath: item.relpath,
+          }).toString();
+        })
+        .catch(() => {});
+    }
+
+    async function reload(refresh) {
+      state.index = 0;
+      const ok = await ensureIndex(refresh);
+      if (ok) await showCurrent();
+    }
+
+    function canEditCheckReason(item) {
+      if (!item || item.empty) return false;
+      if (item.kind === "review_delete") return true;
+      return item.kind === "images" && !!item.reviewed;
+    }
+
+    function syncReasonBox(item) {
+      const box = $("checkReason");
+      const hint = $("reasonHint");
+      if (!item || item.empty) {
+        box.value = "";
+        box.disabled = true;
+        hint.textContent = "未标记删除，输入框已锁定";
+        return;
+      }
+      box.value = item.check_reason || "";
+      if (canEditCheckReason(item)) {
+        box.disabled = false;
+        box.placeholder = "写下为什么认为这张图需要删除";
+        hint.textContent = item.check_reason ? "已保存，改完后点到别处会再存" : "可以填写删除原因，写完后点到别处会自动保存";
+      } else {
+        box.disabled = true;
+        box.placeholder = "先点「该图需删除」，再填写为什么要删这张图";
+        hint.textContent = "未标记删除，输入框已锁定";
+      }
+    }
+
+    function syncReviewButton(item) {
+      const btn = $("reviewBtn");
+      const msg = $("reviewMsg");
+      msg.textContent = "";
+      syncReasonBox(item);
+      if (!item || item.empty || !item.has_image) {
+        btn.hidden = true;
+        btn.disabled = true;
+        return;
+      }
+      if (item.kind === "images") {
+        btn.hidden = false;
+        btn.disabled = !!item.reviewed;
+        btn.textContent = item.reviewed ? "已加入检查后删除" : "该图需删除";
+        return;
+      }
+      if (item.kind === "deleted") {
+        btn.hidden = false;
+        btn.disabled = !!item.reviewed;
+        btn.textContent = item.reviewed ? "已加入检查后保留" : "该图需保留";
+        return;
+      }
+      btn.hidden = true;
+      btn.disabled = true;
+    }
+
+    function move(delta) {
+      if (!state.count) return;
+      state.index = (state.index + delta + state.count) % state.count;
+      showCurrent();
+    }
+
+    $("dataset").addEventListener("change", async () => {
+      syncSelectTitle("dataset");
+      const ds = (state.catalog.datasets || []).find((d) => d.id === $("dataset").value);
+      fillVersions();
+      fillSubsets((ds && ds.subsets) || [], true);
+      await reload(false);
+    });
+    $("version").addEventListener("change", () => {
+      syncSelectTitle("version");
+      fillKinds();
+      reload(false);
+    });
+    $("kind").addEventListener("change", () => reload(false));
+    $("subset").addEventListener("change", () => { syncSelectTitle("subset"); reload(false); });
+    $("prevBtn").addEventListener("click", () => move(-1));
+    $("nextBtn").addEventListener("click", () => move(1));
+    $("refreshBtn").addEventListener("click", () => reload(true));
+    $("checkReason").addEventListener("blur", async () => {
+      const item = state.item;
+      if (!canEditCheckReason(item)) return;
+      const note = $("checkReason").value;
+      if ((item.check_reason || "") === note) return;
+      $("reasonHint").textContent = "正在保存…";
+      try {
+        const res = await fetch("/api/review_reason", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...selected(), i: state.index, note }),
+        });
+        const text = await res.text();
+        const data = JSON.parse(text);
+        if (data.error) {
+          $("reasonHint").textContent = data.error;
+          return;
+        }
+        item.check_reason = data.check_reason || "";
+        $("reasonHint").textContent = "已保存";
+      } catch (err) {
+        $("reasonHint").textContent = "保存失败，请重启查看器后再试";
+      }
+    });
+    $("reviewBtn").addEventListener("click", async () => {
+      const btn = $("reviewBtn");
+      if (btn.disabled || !state.item) return;
+      btn.disabled = true;
+      $("reviewMsg").textContent = "正在复制…";
+      try {
+        const res = await fetch("/api/review", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...selected(), i: state.index }),
+        });
+        const text = await res.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (_) {
+          $("reviewMsg").textContent = "服务还是旧进程，请在 tmux 里重启 python app.py 后再点";
+          btn.disabled = false;
+          return;
+        }
+        if (data.error) {
+          $("reviewMsg").textContent = data.error;
+          btn.disabled = false;
+          return;
+        }
+        if (state.item) state.item.reviewed = true;
+        syncReviewButton(state.item);
+        $("reviewMsg").textContent = "";
+        renderMeta(state.item);
+        if (state.item && state.item.kind === "images") $("checkReason").focus();
+      } catch (err) {
+        $("reviewMsg").textContent = String(err);
+        btn.disabled = false;
+      }
+    });
+    $("goBtn").addEventListener("click", () => {
+      const n = Number($("jump").value);
+      if (!Number.isFinite(n) || n < 1) return;
+      state.index = Math.min(state.count, Math.max(1, Math.floor(n))) - 1;
+      showCurrent();
+    });
+    $("jump").addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") $("goBtn").click();
+    });
+    window.addEventListener("keydown", (ev) => {
+      if (["INPUT", "SELECT", "TEXTAREA"].includes(ev.target.tagName)) return;
+      if (ev.key === "ArrowLeft") move(-1);
+      if (ev.key === "ArrowRight") move(1);
+      if (ev.key === "Home") { state.index = 0; showCurrent(); }
+      if (ev.key === "End") { state.index = Math.max(state.count - 1, 0); showCurrent(); }
+    });
+
+    loadCatalog().then(() => reload(false)).catch((err) => setBusy(String(err)));
+  </script>
+</body>
+</html>

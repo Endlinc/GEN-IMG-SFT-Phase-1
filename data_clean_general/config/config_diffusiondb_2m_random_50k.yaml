@@ -1,0 +1,72 @@
+# diffusiondb_2m_random_50k
+save_mode: split
+
+filters:
+  - name: BrokenFilesFilter
+    enabled: true
+    check_missing_image: true
+    check_missing_text: true
+    check_image_loadable: true
+    min_text_length: 1
+
+  - name: ResolutionFilter
+    enabled: true
+    min_width: 512
+    min_height: 512
+    min_pixels: 100000
+
+  - name: AspectRatioFilter
+    enabled: true
+    min_ratio: 0.25
+    max_ratio: 4.0
+
+  - name: DuplicateFilter
+    enabled: true
+    hash_size: 16
+    threshold: 6
+    secondary_threshold: 6
+    method: hybrid
+    hash_workers: 16
+    hash_batch_size: 64
+
+  - name: LanguageFilter
+    enabled: true
+    allowed_languages:
+      - en
+      - zh
+      - zh-cn
+      - zh-tw
+    fallback_keep: true
+    min_text_length: 5
+
+  - name: NSFWFilter
+    enabled: true
+    # 从 https://huggingface.co/Falconsai/nsfw_image_detection 下载后替换为本地路径
+    model_name: "/path/to/models/nsfw_image_detection"
+    threshold: 0.5
+    device: auto
+    batch_size: 32
+
+  - name: WatermarkFilter
+    enabled: true
+    # 从 https://huggingface.co/prithivMLmods/Watermark-Detection-SigLIP2 下载后替换为本地路径
+    model_name: "/path/to/models/Watermark-Detection-SigLIP2"
+    threshold: 0.70
+    min_margin: 0.20
+    device: auto
+    batch_size: 32
+
+  - name: CompressionQualityFilter
+    enabled: false
+    max_blockiness: 2.5
+    max_high_freq_ratio: 5.0
+
+  - name: BlurFilter
+    enabled: true
+    min_laplacian_var: 100
+    resize_to: 512
+
+  - name: EntropyFilter
+    enabled: false
+    min_entropy: 2
+    max_entropy: 8.5

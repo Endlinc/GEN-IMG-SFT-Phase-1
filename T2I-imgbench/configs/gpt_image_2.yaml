@@ -1,0 +1,13 @@
+model_name: gpt_image_2
+
+api:
+  provider: openai_compatible         # 任意中转站平台（OpenAI images 兼容接口，示例平台 yunwu）
+  base_url: https://yunwu.ai           # 客户端自动拼 /v1/images/generations；此处为示例平台，可换任意中转站
+  model: gpt-image-2
+  size: "1024x1024"                   # OpenAI images 格式（WxH）
+  quality: medium                       # 协议"标准档"；gpt-image-2 支持 low/medium/high/auto
+  payload_style: openai               # 裸 OpenAI payload，不发 qwen 风格 parameters 块
+  supports_seed: false                # gpt-image-2 不支持 seed（协议 §3.3 退化：4 张独立采样）
+  max_retries: 3                      # 仅网络/5xx 重试，指数退避 2/4/8s
+  timeout_s: 300
+  request_interval_s: 1.0             # 简单限速，避免触发平台限流

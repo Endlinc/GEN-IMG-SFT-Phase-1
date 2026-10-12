@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+outputs/
+
+# 下载的 benchmark 数据与模型（体积大，不入库；目录占位与校验清单除外）
+Benchmarks/*
+!Benchmarks/.gitkeep
+!Benchmarks/prompts_manifest.json
+Models/*
+!Models/.gitkeep

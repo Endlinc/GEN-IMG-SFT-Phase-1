@@ -1,0 +1,13 @@
+model_name: qwen_image_2
+
+api:
+  provider: qianwen                  # qianwen=千问(DashScope原生)
+  base_url: https://dashscope.aliyuncs.com/api/v1
+  model: qwen-image-2.0-2026-03-03   # qwen-image-2.0 唯一 snapshot（非 pro）
+  size: "1024*1024"                # dashscope 格式（W*H）
+  prompt_extend: false             # 禁止平台改写 prompt
+  watermark: false
+  negative_prompt: ""
+  max_retries: 3                   # 仅网络/5xx 重试，指数退避 2/4/8s
+  timeout_s: 300
+  request_interval_s: 1.0          # 简单限速，避免触发平台限流

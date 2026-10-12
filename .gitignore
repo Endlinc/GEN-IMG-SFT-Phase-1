@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Data cleaning (data_clean_general): local runs, caches, downloaded models
+data_clean_general/logs/
+data_clean_general/output_*/
+data_clean_general/webview/.cache/
+data_clean_general/models/

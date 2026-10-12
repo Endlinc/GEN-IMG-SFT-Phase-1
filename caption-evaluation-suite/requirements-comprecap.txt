@@ -1,0 +1,19 @@
+# CompreCap official evaluator dependencies
+# Install these in addition to base requirements.txt to run the official
+# CompreCap evaluate.py (--comprecap-repo flag in run_comprecap.py).
+#
+#
+# Install steps:
+#   pip install -r requirements.txt
+#   pip install -r requirements-comprecap.txt
+#   python -m spacy download en_core_web_lg
+#
+# You also need a local LLM checkpoint for the judge, e.g.:
+#   meta-llama/Llama-3.1-8B-Instruct  (official default)
+# Set via --llm-path or COMPRECAP_LLM_PATH env var.
+
+torch>=2.0
+transformers>=4.30
+sentence-transformers>=2.2
+spacy>=3.0
+accelerate>=0.20

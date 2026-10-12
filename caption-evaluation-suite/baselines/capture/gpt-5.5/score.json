@@ -1,0 +1,7 @@
+{
+  "benchmark": "CAPTURE",
+  "dataset": "DetailCaps-4870",
+  "captioner": "gpt-5.5",
+  "n_images": 4870,
+  "capture_score": 0.6261
+}

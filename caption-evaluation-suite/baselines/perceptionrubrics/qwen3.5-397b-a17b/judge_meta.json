@@ -1,0 +1,79 @@
+{
+  "task": "judge",
+  "judge_model": "gpt-oss-120b",
+  "predict_model": null,
+  "dataset": null,
+  "split": "test",
+  "base_url": "https://yunwu.ai/v1",
+  "max_tokens": 32768,
+  "temperature": 1.0,
+  "top_p": null,
+  "top_k": null,
+  "reasoning_effort": null,
+  "retries": 5,
+  "workers": 8,
+  "limit": null,
+  "predictions_file": "/mnt/lixiaofeng/HiEval/experiments/baselines/results/qwen3.5-397b-a17b/perceptionrubrics/predictions.jsonl",
+  "elapsed_seconds": 1316.9,
+  "timestamp": "2026-07-28T03:20:03.801635+00:00",
+  "summary": {
+    "count": 1038,
+    "success": 1038,
+    "failures": 0,
+    "average_score": 0.6208,
+    "mr_pass_rate": 0.8015,
+    "ew_average": 0.7672,
+    "domain_scores": {
+      "Creative/Cultural": {
+        "count": 148,
+        "failures": 0,
+        "average_score": 0.5854,
+        "mr_pass_rate": 0.8176,
+        "ew_average": 0.7
+      },
+      "Digital UI/UX": {
+        "count": 248,
+        "failures": 0,
+        "average_score": 0.5558,
+        "mr_pass_rate": 0.6895,
+        "ew_average": 0.7997
+      },
+      "Document/OCR": {
+        "count": 139,
+        "failures": 0,
+        "average_score": 0.5693,
+        "mr_pass_rate": 0.7194,
+        "ew_average": 0.7762
+      },
+      "Logic/Puzzle": {
+        "count": 103,
+        "failures": 0,
+        "average_score": 0.6129,
+        "mr_pass_rate": 0.835,
+        "ew_average": 0.7226
+      },
+      "Natural Scene": {
+        "count": 131,
+        "failures": 0,
+        "average_score": 0.7061,
+        "mr_pass_rate": 0.9542,
+        "ew_average": 0.7373
+      },
+      "STEM/Expert": {
+        "count": 97,
+        "failures": 0,
+        "average_score": 0.7503,
+        "mr_pass_rate": 0.9175,
+        "ew_average": 0.8078
+      },
+      "Structured Data": {
+        "count": 172,
+        "failures": 0,
+        "average_score": 0.6531,
+        "mr_pass_rate": 0.814,
+        "ew_average": 0.7973
+      }
+    },
+    "output": "/mnt/lixiaofeng/HiEval/experiments/baselines/results/qwen3.5-397b-a17b/perceptionrubrics/results.jsonl"
+  }
+}

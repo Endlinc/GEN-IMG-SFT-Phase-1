@@ -1,0 +1,8 @@
+# CAPTURE local scoring dependencies
+# Install these to run CAPTURE scoring locally (run_capture.py)
+# The base requirements.txt is also required.
+
+capture_metric>=0.1.0
+torch>=2.0
+sentence-transformers>=2.2
+transformers>=4.30

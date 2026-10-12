@@ -1,0 +1,5 @@
+# Base dependencies — required for all caption-generation scripts
+# (run_capsbench.py, run_capture.py, run_comprecap.py, run_perceptionrubrics.py,
+#  and all adversarial scripts that use capture_metric)
+numpy>=1.24
+Pillow>=9.0

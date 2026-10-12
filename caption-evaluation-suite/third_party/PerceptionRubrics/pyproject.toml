@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "perception-rubric"
+version = "0.1.0"
+description = "Perception Rubric evaluation framework for generated image captions."
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+dependencies = ["openai>=1.30.0"]
+keywords = ["multimodal", "evaluation", "benchmark", "perception", "rubric", "MLLM", "image-captioning"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[project.optional-dependencies]
+examples = ["datasets>=2.14.0", "pillow>=9.0.0", "tqdm>=4.65.0"]
+
+[project.urls]
+Homepage = "https://weiyana.github.io/PerceptionRubrics/"
+Paper = "https://arxiv.org/abs/2606.28322"
+Dataset = "https://huggingface.co/datasets/M1chaelPeng/PerceptionRubrics"
+
+[tool.setuptools.packages.find]
+include = ["perception_rubric*"]

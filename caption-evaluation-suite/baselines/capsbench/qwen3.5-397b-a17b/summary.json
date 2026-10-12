@@ -1,0 +1,27 @@
+{
+  "benchmark": "CapsBench",
+  "captioner": "skip",
+  "judge": "deepseek-v3.2",
+  "n_images": 200,
+  "n_questions": 2406,
+  "accuracy": 0.7398171238570241,
+  "per_category": {
+    "text": 0.9090909090909091,
+    "color": 0.8144329896907216,
+    "position": 0.6887966804979253,
+    "emotion": 0.7093023255813954,
+    "blur": 0.5405405405405406,
+    "artifacts": 0.34285714285714286,
+    "proper noun": 0.48148148148148145,
+    "entity shape": 0.6262626262626263,
+    "count": 0.8905109489051095,
+    "entity": 0.912568306010929,
+    "relation": 0.8571428571428571,
+    "color palette": 0.8521739130434782,
+    "image type": 0.49444444444444446,
+    "color grading": 0.5460526315789473,
+    "relative position": 0.7129629629629629,
+    "general": 0.9470588235294117,
+    "entity size": 0.5702479338842975
+  }
+}

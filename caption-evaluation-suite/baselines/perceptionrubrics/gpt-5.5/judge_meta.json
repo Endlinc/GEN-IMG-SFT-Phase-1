@@ -1,0 +1,79 @@
+{
+  "task": "judge",
+  "judge_model": "gpt-oss-120b",
+  "predict_model": null,
+  "dataset": null,
+  "split": "test",
+  "base_url": "https://yunwu.ai/v1",
+  "max_tokens": 32768,
+  "temperature": 1.0,
+  "top_p": null,
+  "top_k": null,
+  "reasoning_effort": null,
+  "retries": 5,
+  "workers": 8,
+  "limit": null,
+  "predictions_file": "/mnt/lixiaofeng/HiEval/experiments/baselines/results/gpt-5.5/perceptionrubrics/predictions.jsonl",
+  "elapsed_seconds": 1136.8,
+  "timestamp": "2026-07-28T03:17:03.699743+00:00",
+  "summary": {
+    "count": 1038,
+    "success": 1038,
+    "failures": 0,
+    "average_score": 0.5864,
+    "mr_pass_rate": 0.8006,
+    "ew_average": 0.7211,
+    "domain_scores": {
+      "Creative/Cultural": {
+        "count": 148,
+        "failures": 0,
+        "average_score": 0.448,
+        "mr_pass_rate": 0.7162,
+        "ew_average": 0.5885
+      },
+      "Digital UI/UX": {
+        "count": 248,
+        "failures": 0,
+        "average_score": 0.6541,
+        "mr_pass_rate": 0.7782,
+        "ew_average": 0.8412
+      },
+      "Document/OCR": {
+        "count": 139,
+        "failures": 0,
+        "average_score": 0.5292,
+        "mr_pass_rate": 0.7122,
+        "ew_average": 0.7089
+      },
+      "Logic/Puzzle": {
+        "count": 103,
+        "failures": 0,
+        "average_score": 0.5175,
+        "mr_pass_rate": 0.8058,
+        "ew_average": 0.6328
+      },
+      "Natural Scene": {
+        "count": 131,
+        "failures": 0,
+        "average_score": 0.533,
+        "mr_pass_rate": 0.9618,
+        "ew_average": 0.5595
+      },
+      "STEM/Expert": {
+        "count": 97,
+        "failures": 0,
+        "average_score": 0.6255,
+        "mr_pass_rate": 0.8247,
+        "ew_average": 0.7538
+      },
+      "Structured Data": {
+        "count": 172,
+        "failures": 0,
+        "average_score": 0.7139,
+        "mr_pass_rate": 0.8372,
+        "ew_average": 0.8295
+      }
+    },
+    "output": "/mnt/lixiaofeng/HiEval/experiments/baselines/results/gpt-5.5/perceptionrubrics/results_v2.jsonl"
+  }
+}

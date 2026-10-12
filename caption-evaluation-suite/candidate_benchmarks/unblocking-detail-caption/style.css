@@ -1,0 +1,128 @@
+/*
+this CSS is compiled from SCSS and readonly
+*/
+/* Style for the links on author names in the header */
+header p.authors a { /* More specific selector to target links within the authors paragraph in the header */
+    color: #303030;     /* Note: #303030 is a dark gray. If you intended light blue, the hex code would be different (e.g., #ADD8E6 or a more accessible blue). */
+    text-decoration: underline; /* MODIFIED: This will make author names underlined by default */
+}
+
+header p.authors a:hover {
+    color: #287e9a;     /* A slightly different dark gray/blue for hover */
+    text-decoration: underline; /* Keeps the underline on hover. You could change this to 'none' if you wanted the underline to disappear on hover. */
+}
+
+/* Optional: Ensure the non-link parts of the author string are a contrasting color (e.g., white) */
+header p.authors {
+    color: #616161; /* Mid-gray for the non-linked text like commas, asterisks */
+}
+
+/* Ensure superscripts are also legible */
+header p.authors sup {
+    color: #616161; /* Mid-gray for superscripts, consistent with other non-link text */
+}
+
+
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.6;
+  margin: 0;
+  padding: 0;
+  background-color: #f4f4f4;
+  color: #333; }
+
+header {
+  background: #f4f4f4;
+  color: #464646; /* Default text color for header content if not overridden */
+  padding: 1rem 0;
+  text-align: center; }
+
+header h1 {
+  margin-bottom: 0.5rem;
+  font-size: 2em; }
+
+header .authors, header .affiliations, header .conference {
+  font-size: 0.9em;
+  margin-bottom: 0.3rem; }
+
+nav {
+  margin-top: 1rem; }
+
+nav a {
+  color: #616161;
+  text-decoration: none;
+  margin: 0 10px;
+  font-weight: bold; }
+
+nav a:hover {
+  text-decoration: underline; }
+
+main {
+  max-width: 960px;
+  margin: 20px auto;
+  padding: 0 20px;
+  background-color: #fff;
+  box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); }
+
+section {
+  padding: 20px 0;
+  border-bottom: 1px solid #eee; }
+
+section:last-child {
+  border-bottom: none; }
+
+section h2 {
+  color: #333;
+  margin-bottom: 1rem;
+  text-align: center; }
+
+.responsive-img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 10px auto;
+  border: 1px solid #ddd;
+  padding: 5px; }
+
+.caption {
+  text-align: center;
+  font-style: italic;
+  color: #555;
+  font-size: 0.9em;
+  margin-top: 5px; }
+
+pre {
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  padding: 15px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  /* CSS3 */
+  white-space: -moz-pre-wrap;
+  /* Mozilla, since 1999 */
+  white-space: -pre-wrap;
+  /* Opera 4-6 */
+  white-space: -o-pre-wrap;
+  /* Opera 7 */
+  word-wrap: break-word;
+  /* Internet Explorer 5.5+ */ }
+
+ul {
+  list-style-type: disc;
+  padding-left: 20px; }
+
+footer {
+  text-align: center;
+  padding: 20px;
+  margin-top: 20px;
+  font-size: 0.8em;
+  color: #777; }
+
+/* Simple responsiveness */
+@media (max-width: 768px) {
+  header h1 {
+    font-size: 1.5em; }
+  nav a {
+    display: block;
+    margin: 5px 0; } }

@@ -1,0 +1,7 @@
+{
+  "benchmark": "CAPTURE",
+  "dataset": "DetailCaps-4870",
+  "captioner": "claude-sonnet-4-5-20250929",
+  "n_images": 4870,
+  "capture_score": 0.6227092146873474
+}

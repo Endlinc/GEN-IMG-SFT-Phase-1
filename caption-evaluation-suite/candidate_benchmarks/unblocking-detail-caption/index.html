@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unblocking Fine-Grained Evaluation of Detailed Captions (NeurIPS 2025)</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Optional: Favicon -->
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+</head>
+<body>
+    <header>
+        <h1>Unblocking Fine-Grained Evaluation of Detailed Captions:<br>An Explaining AutoRater and Critic-and-Revise Pipeline</h1>
+        <p class="authors">
+            <a href="https://www.linkedin.com/in/brian-gordon-38b29bb1/" target="_blank">Brian Gordon</a>*<sup>1,2</sup>,
+            <a href="https://yonatanbitton.github.io/" target="_blank">Yonatan Bitton</a>*<sup>2</sup>,
+            <a href="https://www.linkedin.com/in/andreea-marzoca-99376012b/" target="_blank">Andreea Marzoca</a><sup>2</sup>,
+            <a href="https://yasumasaonoe.github.io/" target="_blank">Yasumasa Onoe</a><sup>2</sup>, <br>
+            <a href="https://www.linkedin.com/in/brainshawn/" target="_blank">Xiao Wang</a><sup>2</sup>,
+            <a href="https://danielcohenor.com/" target="_blank">Daniel Cohen-Or</a><sup>1</sup>,
+            <a href="https://research.google/people/idan-szpektor/?&type=google" target="_blank">Idan Szpektor</a><sup>2</sup>
+        </p>
+        <p class="affiliations">
+            <sup>1</sup>Tel Aviv University, <sup>2</sup>Google Research <br>
+            *Equal contribution
+        </p>
+        <nav>
+            <a href="https://www.arxiv.org/abs/2506.07631" target="_blank">arXiv</a> |
+            <a href="https://huggingface.co/datasets/google/DOCCI-Critique" target="_blank">🤗 DOCCI-Critique</a>
+            <!-- Consider adding links to key sections like #docci-critique, #results, #bibtex if space allows and desired -->
+        </nav>
+    </header>
+
+    <main>
+        <section id="overview-image">
+            <h2>Overview</h2>
+            <img src="web-data/Teaser.png" alt="Overview of VNLI-Critique and Critic-and-Revise Pipeline" class="responsive-img">
+            <p class="caption">
+                Figure 1: Our VNLI-Critique model operating as a Critic and within the Critic-and-Revise pipeline.
+            </p>
+        </section>
+
+        <section id="abstract">
+            <h2>Abstract</h2>
+            <p>
+                Large Vision-Language Models (VLMs) now generate highly detailed, paragraph-length image captions, yet evaluating their factual accuracy remains challenging. Current methods often miss fine-grained errors, being designed for shorter texts or lacking datasets with verified inaccuracies. We introduce DOCCI-Critique, a benchmark with 1,400 VLM-generated paragraph captions (100 images, 14 VLMs) featuring over 10,216 sentence-level human annotations of factual correctness and explanatory rationales for errors, all within paragraph context. Building on this, we develop VNLI-Critique, a model for automated sentence-level factuality classification and critique generation. We highlight three key applications: (1) VNLI-Critique demonstrates robust generalization, validated by state-of-the-art performance on the M-HalDetect benchmark and strong results in CHOCOLATE claim verification. (2) The VNLI-Critique driven AutoRater for DOCCI-Critique provides reliable VLM rankings, showing excellent alignment with human factuality judgments (e.g., 0.98 Spearman). (3) An innovative Critic-and-Revise pipeline, where critiques from VNLI-Critique guide LLM-based corrections, achieves substantial improvements in caption factuality (e.g., a 46% gain on DetailCaps-4870). Our work offers a crucial benchmark alongside practical tools, designed to significantly elevate the standards for fine-grained evaluation and foster the improvement of VLM image understanding.
+            </p>
+        </section>
+
+        <section id="key-contributions">
+            <h2>Key Contributions</h2>
+            <ul>
+                <li><strong>📊 DOCCI-Critique Benchmark:</strong> A new, challenging dataset for fine-grained evaluation of detailed captions.</li>
+                <li><strong>🤖 VNLI-Critique Model:</strong> An "Explaining AutoRater" for automated factuality assessment and critique generation.</li>
+                <li><strong>✍️ Critic-and-Revise Pipeline:</strong> An automated pipeline to correct factual errors in captions using VNLI-Critique and an LLM.</li>
+            </ul>
+        </section>
+
+        <section id="visuals">
+            <h2>Visuals & Examples</h2>
+            <div>
+                <h3>VNLI-Critique Assessment Example</h3>
+                <img src="web-data/Competitors.png" alt="VNLI-Critique Assesment Example" class="responsive-img">
+                <p class="caption">VNLI-Critique's fine-grained, human-aligned fact-checking compared to zero-shot VLMs (from Figure 2 in the paper).</p>
+            </div>
+            <div>
+                <h3>Critic-and-Revise Pipeline Example</h3>
+                <img src="web-data/Critic-and-Revise Pipeline Example.png" alt="Critic-and-Revise Pipeline Example" class="responsive-img">
+                <p class="caption">Qualitative example of the Critic-and-Revise pipeline correcting a caption.</p>
+            </div>
+        </section>
+
+        <section id="docci-critique">
+            <h2>DOCCI-Critique Benchmark</h2>
+            <p>
+                DOCCI-Critique is a novel benchmark specifically designed for fine-grained factuality assessment of paragraph-level image descriptions. It comprises 1,400 VLM-generated paragraph captions derived from 100 diverse, high-resolution images, featuring over 10,216 sentence-level human annotations. Each sentence's factuality was judged by five annotators who also provided detailed textual rationales for any identified errors.
+            </p>
+            <div>
+                <h3>DOCCI-Critique Annotation Example</h3>
+                <img src="web-data/DOCCI-Critique Annotation Example.png" alt="DOCCI-Critique Annotation Example" class="responsive-img">
+                <p class="caption">Illustrative example from the DOCCI-Critique benchmark showing sentence-level annotations and rationales (similar to Table 1 in the paper).</p>
+            </div>
+            <div>
+                <h3>Benchmark Statistics Overview</h3>
+                <img src="web-data/DOCCI-Critique Table Details.png" alt="DOCCI-Critique Benchmark Statistics" class="responsive-img">
+                <p class="caption">Key statistics of the DOCCI-Critique benchmark, detailing per-model description lengths, factual accuracy, and lexical diversity (similar to Table 2 in the paper).</p>
+            </div>
+        </section>
+
+        <section id="results">
+            <h2>Experimental Results</h2>
+            <div id="docci-critique-results">
+                <h3>AutoRater Performance on DOCCI-Critique</h3>
+                <p>
+                    We evaluated VNLI-Critique as an AutoRater on our DOCCI-Critique benchmark by comparing its VLM rankings against human judgments across three factuality criteria. VNLI-Critique demonstrates exceptional alignment with human assessments.
+                </p>
+                <div>
+                    <h4>AutoRater Correlation with Human Judgments</h4>
+                    <img src="web-data/DOCCI-Critique AutoRate table.png" alt="AutoRater Correlation Results" class="responsive-img">
+                    <p class="caption">Correlation (Spearman's $\rho$, Kendall's $\tau$) between model-based rankings (including VNLI-Critique) and human judgments of VLM factuality on DOCCI-Critique (similar to Table 3 in the paper). VNLI-Critique achieves up to 0.981 Spearman correlation.</p>
+                </div>
+            </div>
+
+            <div id="further-results">
+                <h3>Further Results (External Benchmarks & Pipeline Performance)</h3>
+                <p>Beyond DOCCI-Critique, our methods show strong performance on external datasets and in improving caption factuality through our pipeline:</p>
+                <div>
+                    <h4>VNLI-Critique on External Benchmarks</h4>
+                    <img src="web-data/External-Benchmarks.png" alt="VNLI-Critique External Benchmark Results" class="responsive-img">
+                    <p class="caption">Performance of VNLI-Critique on external benchmarks like M-HalDetect and CHOCOLATE, demonstrating SOTA results (e.g., 0.76 Macro-F1 on M-HalDetect) and strong generalization (similar to Table 4 in the paper).</p>
+                </div>
+                <div>
+                    <h4>Critic-and-Revise Pipeline Performance</h4>
+                    <img src="web-data/Critic-and-Revise Human Annotation.png" alt="Critic-and-Revise Pipeline Performance" class="responsive-img">
+                    <p class="caption">Factuality improvements achieved by the Critic-and-Revise pipeline on datasets like DetailCaps-4870 and PixelProse, showing significant gains (e.g., 46% on DetailCaps-4870) as confirmed by human evaluation (similar to Table 6 in the paper).</p>
+                </div>
+                <p style="margin-top: 20px;">For full experimental details, please refer to <a href="[LINK_TO_PAPER_PDF_AGAIN_OR_ARXIV]" target="_blank">our paper</a> - COMING SOON!.</p> <!-- Consider linking directly to paper/arxiv again here -->
+            </div>
+        </section>
+
+        <!-- Optional: Add a Downloads or Code/Data section if you want it separate and more prominent -->
+        <!-- Example:
+        <section id="downloads">
+            <h2>Code, Data & Models</h2>
+            <ul>
+                <li><a href="[LINK_TO_GITHUB_REPO]" target="_blank">GitHub Repository</a></li>
+                <li><a href="[LINK_TO_DOCCI_CRITIQUE_DATA_DOWNLOAD_OR_PAGE]" target="_blank">DOCCI-Critique Benchmark Data</a></li>
+                <li><a href="[LINK_TO_VNLI_CRITIQUE_MODEL_DOWNLOAD_OR_HUB]" target="_blank">VNLI-Critique Pre-trained Model</a></li>
+            </ul>
+        </section>
+        -->
+
+        <!-- <section id="bibtex"> <!-- Placed Citation before License -->
+            <!-- <h2>Citation</h2>
+            <p>If you find our work useful, please cite:</p>
+            <pre><code>
+@inproceedings{gordon2025unblocking,
+  title={Unblocking Fine-Grained Evaluation of Detailed Captions: An Explaining AutoRater and Critic-and-Revise Pipeline},
+  author={Gordon, Brian and Bitton, Yonatan and Marzoca, Andreea and Onoe, Yasumasa and Wang, Xiao and Cohen-Or, Daniel and Szpektor, Idan},
+  booktitle={Conference on Neural Information Processing Systems (NeurIPS)},
+  year={2025}
+  /* url={...}, */
+  /* doi={...} */
+}
+            </code></pre>
+        </section> -->
+
+        <p class="license" style="text-align: center; margin-top: 20px; font-size: 0.9em;"> <!-- Added some basic styling for better placement -->
+          <i>The DOCCI-Critique benchmark annotations and associated DOCCI images used in this project are licensed by Google LLC under
+            <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank">CC BY 4.0</a>
+            license. The code is licensed under Apache 2.0.</i> <!-- Clarified license scope -->
+        </p>
+    </main>
+
+<!--     <footer>
+        <p>© 2024 Brian Gordon, Yonatan Bitton, et al. Last updated: [Date]</p>
+    </footer> -->
+</body>
+</html>

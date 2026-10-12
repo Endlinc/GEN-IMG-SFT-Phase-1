@@ -1,0 +1,79 @@
+{
+  "task": "judge",
+  "judge_model": "gpt-oss-120b",
+  "predict_model": null,
+  "dataset": null,
+  "split": "test",
+  "base_url": "https://yunwu.ai/v1",
+  "max_tokens": 32768,
+  "temperature": 1.0,
+  "top_p": null,
+  "top_k": null,
+  "reasoning_effort": null,
+  "retries": 5,
+  "workers": 8,
+  "limit": null,
+  "predictions_file": "/mnt/lixiaofeng/HiEval/experiments/baselines/results/doubao-seed-2-1-pro-260628/perceptionrubrics/predictions.jsonl",
+  "elapsed_seconds": 1169.39,
+  "timestamp": "2026-07-28T03:17:36.405084+00:00",
+  "summary": {
+    "count": 1038,
+    "success": 1038,
+    "failures": 0,
+    "average_score": 0.5135,
+    "mr_pass_rate": 0.6696,
+    "ew_average": 0.7339,
+    "domain_scores": {
+      "Creative/Cultural": {
+        "count": 148,
+        "failures": 0,
+        "average_score": 0.6382,
+        "mr_pass_rate": 0.8311,
+        "ew_average": 0.7496
+      },
+      "Digital UI/UX": {
+        "count": 248,
+        "failures": 0,
+        "average_score": 0.2327,
+        "mr_pass_rate": 0.3508,
+        "ew_average": 0.6555
+      },
+      "Document/OCR": {
+        "count": 139,
+        "failures": 0,
+        "average_score": 0.4964,
+        "mr_pass_rate": 0.6331,
+        "ew_average": 0.7405
+      },
+      "Logic/Puzzle": {
+        "count": 103,
+        "failures": 0,
+        "average_score": 0.5767,
+        "mr_pass_rate": 0.7767,
+        "ew_average": 0.7273
+      },
+      "Natural Scene": {
+        "count": 131,
+        "failures": 0,
+        "average_score": 0.7747,
+        "mr_pass_rate": 0.9695,
+        "ew_average": 0.7959
+      },
+      "STEM/Expert": {
+        "count": 97,
+        "failures": 0,
+        "average_score": 0.729,
+        "mr_pass_rate": 0.866,
+        "ew_average": 0.8246
+      },
+      "Structured Data": {
+        "count": 172,
+        "failures": 0,
+        "average_score": 0.4666,
+        "mr_pass_rate": 0.6163,
+        "ew_average": 0.7336
+      }
+    },
+    "output": "/mnt/lixiaofeng/HiEval/experiments/baselines/results/doubao-seed-2-1-pro-260628/perceptionrubrics/results.jsonl"
+  }
+}

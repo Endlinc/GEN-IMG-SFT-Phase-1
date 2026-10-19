@@ -2,7 +2,6 @@
 # Install these in addition to base requirements.txt to run the official
 # CompreCap evaluate.py (--comprecap-repo flag in run_comprecap.py).
 #
-#
 # Install steps:
 #   pip install -r requirements.txt
 #   pip install -r requirements-comprecap.txt
@@ -16,4 +15,7 @@ torch>=2.0
 transformers>=4.30
 sentence-transformers>=2.2
 spacy>=3.0
+tqdm>=4.60
+# accelerate is not imported by the evaluator directly, but modern transformers
+# wants it installed for low-CPU-memory model loading; keep it.
 accelerate>=0.20

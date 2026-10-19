@@ -1,5 +1,5 @@
-# Base dependencies — required for all caption-generation scripts
-# (run_capsbench.py, run_capture.py, run_comprecap.py, run_perceptionrubrics.py,
-#  and all adversarial scripts that use capture_metric)
+# Base dependencies — required by every script in code/ (the four run_*.py
+# runners plus generate_captions.py): Pillow to read images, numpy for the
+# caption/scoring plumbing. Scoring-specific deps live in the other two files.
 numpy>=1.24
 Pillow>=9.0

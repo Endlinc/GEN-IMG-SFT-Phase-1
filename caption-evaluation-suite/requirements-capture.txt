@@ -1,6 +1,11 @@
 # CAPTURE local scoring dependencies
 # Install these to run CAPTURE scoring locally (run_capture.py)
 # The base requirements.txt is also required.
+#
+# capture_metric pulls its own runtime deps (tqdm, nltk, spacy, scipy, pandas,
+# tabulate and FactualSceneGraph) transitively, so they are not repeated here.
+# Note the spelling if you ever need to pin it by hand: the PyPI name is
+# `FactualSceneGraph` — `factual-scene-graph` does not exist.
 
 capture_metric>=0.1.0
 torch>=2.0

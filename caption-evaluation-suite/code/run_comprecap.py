@@ -8,6 +8,15 @@ Protocol (arXiv:2412.08614):
             --bert PATH/to/all-MiniLM-L6-v2 --longcap_file captions.json \
             --output-dir results/
 
+Two caption sources:
+  default                    call the API and caption the images
+  --captions-file PATH       score captions generated earlier (canonical JSONL; see
+                             caption_io.py), skipping the API entirely
+
+Captions are always written twice: `<out>/captions.jsonl` in the canonical format
+shared by all four benchmarks, and `<out>/captions.json` as the plain
+`{image_id: caption}` object the vendored evaluator's `--longcap_file` expects.
+
 This script generates the caption JSON, then either runs the official evaluator
 (if the repo path is supplied) or prints the exact command.
 """
@@ -15,78 +24,76 @@ This script generates the caption JSON, then either runs the official evaluator
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Dict
 
-import numpy as np
-from PIL import Image
+from PIL import Image  # noqa: F401  (kept: datasets.to_array handles path strings)
 
 sys.path.insert(0, str(Path(__file__).parent))
+from caption_io import (add_caption_args, count_errors, load_injected,
+                        resolve_prompt, save_captions)
 from captioners import build_captioner
-
-
-def load_comprecap_images(data_dir: Path) -> List[Dict[str, Any]]:
-    """Return list of {image_id, image_path} from CompreCap_dataset/images."""
-    images_dir = data_dir / "images"
-    if not images_dir.exists():
-        raise FileNotFoundError(f"CompreCap images dir not found: {images_dir}")
-    rows = []
-    for p in sorted(images_dir.glob("*.jpg")):
-        rows.append({"image_id": p.name, "image_path": str(p)})
-    return rows
+from datasets import iter_items, load_comprecap_rows
 
 
 def run(args: argparse.Namespace) -> int:
+    t0 = time.time()
     data_dir = Path(args.data)
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # --anno-subset overrides the full anno.json with a pre-sampled subset
-    if args.anno_subset:
-        with open(args.anno_subset, encoding="utf-8") as f:
-            anno_data = json.load(f)
-        rows = [{"image_id": ex["image"], "image_path": str(data_dir / "images" / ex["image"])}
-                for ex in anno_data]
+    rows = load_comprecap_rows(data_dir, args.anno_subset)
+    if args.limit:
+        rows = rows[: args.limit]
+    ids = [row["image_id"] for row in rows]
+
+    captions_jsonl = out_dir / "captions.jsonl"   # canonical, shared format
+    captions_path = out_dir / "captions.json"     # legacy dict, for the evaluator
+
+    # --- caption source: injected file, or the API ---
+    injected = load_injected(args)
+    if injected is not None:
+        missing = [k for k in ids if k not in injected]
+        if missing:
+            raise SystemExit(
+                f"[CompreCap] --captions-file covers {len(ids) - len(missing)}/{len(ids)} "
+                f"images; {len(missing)} missing (first: {missing[:3]})")
+        captions: Dict[str, str] = {k: injected[k] for k in ids}
     else:
-        rows = load_comprecap_images(data_dir)
-    captioner = build_captioner(args.captioner, device=args.device)
+        captioner = build_captioner(args.captioner, device=args.device,
+                                    prompt_override=resolve_prompt(args),
+                                    max_tokens=args.max_tokens)
+        from captioners import caption_many
+        items = list(iter_items("comprecap", data_dir, subset=args.anno_subset,
+                                limit=args.limit))
+        cap_map = caption_many(captioner, items, max_workers=args.workers, label="CompreCap")
+        captions = {k: cap_map.get(k, "") for k, _ in items}
 
-    items = []
-    for i, row in enumerate(rows):
-        if args.limit and i >= args.limit:
-            break
-        image_id = row["image_id"]
-        image = np.array(Image.open(row["image_path"]).convert("RGB"))
-        items.append((image_id, image))
-
-    from captioners import caption_many
-    cap_map = caption_many(captioner, items, max_workers=args.workers, label="CompreCap")
-    captions: Dict[str, str] = {k: cap_map.get(k, "") for k, _ in items}
-
-    captions_path = out_dir / "captions.json"
-    with open(captions_path, "w", encoding="utf-8") as f:
-        json.dump(captions, f, indent=2, ensure_ascii=False)
-    n_err = sum(1 for v in captions.values() if v.startswith("__ERROR__"))
-    print(f"[CompreCap] captions saved: {len(captions)} ({n_err} errors) -> {captions_path}", flush=True)
+    n_err = count_errors(captions)
+    meta = {"benchmark": "CompreCap", "captioner": args.captioner,
+            "n_images": len(captions), "n_errors": n_err,
+            "source": args.captions_file or "generated"}
+    save_captions(captions_jsonl, captions, meta=meta)
+    save_captions(captions_path, captions)  # plain dict for --longcap_file
+    print(f"[CompreCap] captions saved: {len(captions)} ({n_err} errors) -> "
+          f"{captions_jsonl} + {captions_path}", flush=True)
 
     if getattr(args, "caption_only", False):
         print("[CompreCap] --caption-only set; skipping official evaluation.", flush=True)
         return 0
 
-    if args.comprecap_repo and not args.caption_only:
+    if args.comprecap_repo:
         if not args.llm_path:
             raise ValueError("--llm-path (or COMPRECAP_LLM_PATH env var) is required "
                              "when running the official CompreCap evaluator.")
         if not args.bert_path:
             raise ValueError("--bert-path (or COMPRECAP_BERT_PATH env var) is required "
                              "when running the official CompreCap evaluator.")
-
-    # Run official CompreCap evaluate.py if repo path is given.
-    if args.comprecap_repo:
         eval_script = Path(args.comprecap_repo) / "evaluate.py"
         if eval_script.exists():
             official_out = out_dir / "comprecap_official"
@@ -109,6 +116,7 @@ def run(args: argparse.Namespace) -> int:
     else:
         print_official_command(data_dir, captions_path, out_dir, args)
 
+    print(f"[COMPRECAP_DONE] elapsed={time.time() - t0:.1f}s", flush=True)
     return 0
 
 
@@ -143,6 +151,7 @@ def main(argv=None) -> int:
     p.add_argument("--workers", type=int, default=8, help="concurrent caption API workers")
     p.add_argument("--caption-only", action="store_true",
                    help="only generate + save captions, skip official evaluation")
+    add_caption_args(p)
     args = p.parse_args(argv)
     return run(args)
 

@@ -19,11 +19,17 @@ S(M) = [ S_CAPTURE , S_CapsBench , S_CompreCap , S_PerceptionRubrics ]
 caption-evaluation-suite/
 ├── README.md                    # 本文件
 ├── code/                        # 运行与判分代码（4 个 benchmark 各一个入口）
-│   ├── captioners.py            # 统一 caption 生成工厂（被 4 个脚本共用）
+│   ├── captioners.py            # 统一 caption 生成工厂（被所有脚本共用）
+│   ├── caption_io.py            # caption 文件格式（canonical JSONL）+ 共用 CLI 参数
+│   ├── datasets.py              # 各 benchmark「评哪些图、用什么 key」的唯一来源
+│   ├── generate_captions.py     # 只生成 caption、不评分（prompt 可控，见 5.5）
 │   ├── run_capture.py
 │   ├── run_capsbench.py
 │   ├── run_comprecap.py
 │   └── run_perceptionrubrics.py
+├── tests/                       # 离线回归测试：不需要 API key / GPU / 网络
+│   ├── run_all.sh
+│   └── test_caption_pipeline.py # caption 格式、--captions-file、prompt 接线
 ├── baselines/                   # 已跑结果：4 模型 × 4 benchmark（读法见第 6 节）
 ├── third_party/                 # 官方评测代码（快照）
 │   ├── CAPTURE/                 #   capture_metric
@@ -33,7 +39,7 @@ caption-evaluation-suite/
 │   ├── CAPEval/
 │   ├── faithscore/
 │   └── unblocking-detail-caption/   #   DOCCI-Critique
-├── requirements.txt             # 基础依赖（4 个脚本都需要）
+├── requirements.txt             # 基础依赖（所有脚本都需要）
 ├── requirements-capture.txt     # CAPTURE 本地评分额外依赖
 ├── requirements-comprecap.txt   # CompreCap 官方评分额外依赖
 └── .env.example                 # 环境变量模板
@@ -66,11 +72,24 @@ set -a && source .env && set +a
 
 | 变量 | 用途 |
 |------|------|
-| `OPENAI_API_KEY` + `OPENAI_BASE_URL` | OpenAI 兼容端点。**caption 生成与 judge 都走这里** |
+| `OPENAI_BASE_URL` | OpenAI 兼容端点地址。caption 生成与 judge 都走这里 |
+| `OPENAI_API_KEY` | GPT 路由的 key；也是下面两个 family key 的兜底 |
+| `CLAUDE_API_KEY` | Claude 路由的 caption 生成（不设则回落到 `OPENAI_API_KEY`） |
+| `JUDGE_API_KEY` | CapsBench judge 专用（不设则回落到 `OPENAI_API_KEY`） |
+| `CLAUDE_MODEL` | 覆盖 Claude caption 模型的默认名（默认 `claude-sonnet-4-5-20250929`） |
+| `JUDGE_MODEL` | 官方 PerceptionRubrics judge 的环境变量兜底（默认 `gpt-oss-120b`）。CapsBench 的 judge 由 `--judge-model` 控制，默认 `deepseek-v4-flash`，不读这个变量 |
 | `ARK_API_KEY` + `ARK_BASE_URL` | 火山方舟（评测 Doubao / Seed 系列时才需要） |
 | `ANTHROPIC_API_KEY` | 走 Anthropic 原生 API 时才需要 |
-| `CAPTURE_SG_MODEL` / `CAPTURE_ST_MODEL` | CAPTURE 本地模型路径（不设则自动从 HuggingFace 下载） |
 | `COMPRECAP_LLM_PATH` / `COMPRECAP_BERT_PATH` | CompreCap 官方评分用的 Llama-3.1-8B-Instruct / all-MiniLM-L6-v2 |
+| `HF_HOME` | 可选。CAPTURE 的两个 checkpoint（`all-mpnet-base-v2` + `flan-t5-base-VG-factual-sg`）首次运行从 HuggingFace 下载并正常缓存；想固定到本地副本就设这个 |
+
+> **一个端点可能按模型族发多个 key。** 此时单一 `OPENAI_API_KEY` 无法同时覆盖 GPT 与 Claude
+> 两条 caption 路由，需分别填 `CLAUDE_API_KEY` / `JUDGE_API_KEY`；family key 优先于
+> `OPENAI_API_KEY`，所以单 key 端点不做任何改动也能照常工作。
+
+**代码里没有任何硬编码的绝对路径。** 所有路径都来自 `--data` / `--out` 等参数，
+或从环境变量读（如 `COMPRECAP_LLM_PATH`）；需要路径却没给时**明确报错**，
+而不是回退到某个机器上的目录。
 
 ---
 
@@ -98,26 +117,33 @@ set -a && source .env && set +a
 
 `captioners.py` 是统一工厂，4 个脚本共用，`--captioner` 传模型名：
 
-| 名称 | 路由 |
-|------|------|
-| `gpt-5.5` | OpenAI 兼容端点（`OPENAI_BASE_URL`） |
-| `claude-sonnet-4-5-20250929` | OpenAI 兼容端点（默认）或原生 Anthropic；可用 `CLAUDE_MODEL` 覆盖 |
-| `qwen3.5-397b-a17b` | 透传到 OpenAI 兼容端点 |
-| `doubao-*` / `seed-*` | 火山方舟（`ARK_API_KEY`），自动禁用 thinking |
-| 其他任意模型 ID | 原样透传到 OpenAI 兼容端点 |
+| 名称 | 路由 | 使用的 key |
+|------|------|-----------|
+| `claude-sonnet-4-5-20250929` | OpenAI 兼容端点（默认）或原生 Anthropic；可用 `CLAUDE_MODEL` 覆盖 | `CLAUDE_API_KEY` → 回落 `OPENAI_API_KEY` |
+| `doubao-*` / `seed-*` | 火山方舟（`ARK_API_KEY`） | `ARK_API_KEY` |
+| 其他任意模型 ID（如 `gpt-5.5`、`qwen3.5-397b-a17b`） | 原样透传到 OpenAI 兼容端点 | `OPENAI_API_KEY` |
 
-下表的四个模型即已交付 baseline 实际跑过的 captioner，目录名与之一一对应。
+**`--captioner` 没有白名单**：除上表两条特殊路由外，传什么模型 ID 就原样发给端点。
+代码里 `OpenAICaptioner` 的默认值是 `gpt-5.6-sol`；本包交付的 baseline 用的是 `gpt-5.5`，
+两者都只是"传给端点的字符串"，不改变任何评测口径。
 
 ---
 
 ## 5. 运行
 
-四个脚本均可**独立运行**，均在 `code/` 下。通用约定：
+四个脚本均可**独立运行**，均在 `code/` 下，且共用同一套参数（`code/caption_io.py`）：
 
 - `--out` 决定输出位置与文件名
 - `--workers` 控制并发（caption 生成 / judge 线程数）
 - `--limit N` 只跑前 N 张图（`0` = 全量），用于冒烟测试
 - `--caption-only` 只生成 caption，跳过评分
+- `--captions-file` **直接用已有 caption 评分，完全不调用生成 API**（四个脚本都支持）
+- `--prompt` / `--prompt-file` 覆盖 system prompt（默认 `captioners.CAPTIONER_PROMPT`；
+  PerceptionRubrics 默认用它自己的官方 prompt）。`--prompt-file` 优先于 `--prompt`
+- `--max-tokens` caption 生成长度上限（默认 `1024`）
+
+`--captions-file` 接受两种格式：canonical JSONL（每行 `{"image_id","caption"}`）和
+legacy 的 `{image_id: caption}` JSON 对象。所有脚本**写出**的都是 canonical JSONL。
 
 ### 5.1 CAPTURE
 
@@ -131,6 +157,10 @@ python code/run_capture.py \
 
 产出：`capture_gpt-5.5.json`（汇总 `capture_score`）+ `.captions.json`（原始 caption）+ `.per_image.jsonl`。
 只生成 caption：加 `--caption-only`。
+
+> 首次运行会从 HuggingFace 下载场景图解析器与句向量编码器两个 checkpoint。
+> 想固定到本地副本，设 `HF_HOME`（或提前 `huggingface-cli download`）即可，
+> 本包不对模型 ID 做任何重定向。
 
 ### 5.2 CapsBench
 
@@ -156,8 +186,8 @@ python code/run_capsbench.py ... --caption-only --workers 8
 `--captions-file` 同时接受 `.json`（`{image_id: caption}`）和 `.jsonl`（每行 `{image_id, caption}`）。
 judge 模型通过 `OPENAI_BASE_URL` 调用，需 `OPENAI_API_KEY`。
 
-> `--judge-model` 默认 `deepseek-v3.2`。CapsBench 官方 judge 是 Claude-3.5 Sonnet，
-> 因该 API 已不可用而改用能力相近的 DeepSeek-V3.2；本包交付的 baseline 全部使用此 judge。
+> `--judge-model` 默认 `deepseek-v4-flash`。CapsBench 官方 judge 是 Claude-3.5 Sonnet，
+> 因该 API 已不可用而改用能力相近的 DeepSeek 系列；本包交付的 baseline 全部使用此 judge。
 
 ### 5.3 CompreCap
 
@@ -203,7 +233,50 @@ python code/run_perceptionrubrics.py \
 ```
 
 > `third_party/PerceptionRubrics` 需先 `cd` 进去 `pip install -e '.[examples]'`。
-> baseline 使用的 judge 是 `gpt-oss-120b`，脚本默认值不同，复现时需显式传 `--judge-model`。
+> baseline 使用的 judge 是 `gpt-oss-120b`，这也是 `run_perceptionrubrics.py` 的默认值
+> （`--judge-model` 可覆盖）。
+
+### 5.5 只生成 caption（`generate_captions.py`）
+
+`code/generate_captions.py` 把「生成」从四个脚本里独立出来：它只调 API 写 caption 文件，不评分。
+**生成是唯一花钱的一步，评分则可以对着冻结的 caption 随便重跑。**
+
+```bash
+python code/generate_captions.py \
+    --benchmark capture \
+    --data /path/to/DetailCaps-4870 \
+    --captioner gpt-5.6-sol \
+    --prompt-file /path/to/my_prompt.txt \
+    --max-tokens 2048 --workers 16 \
+    --out runs/gpt/p2_standard/capture/captions.jsonl
+
+# 再拿这份 caption 去评分（不产生任何生成调用）
+python code/run_capture.py \
+    --data /path/to/DetailCaps-4870 --captioner gpt-5.6-sol \
+    --captions-file runs/gpt/p2_standard/capture/captions.jsonl \
+    --out runs/gpt/p2_standard/capture/score.json
+```
+
+- `--benchmark` 取 `capture` / `comprecap` / `capsbench` / `perceptionrubrics`；`image_id` 沿用各数据集自己的 key
+- `--resume` 保留已有 caption，只补缺失和失败的那些（端点抖动时把一次半途失败变成一次廉价补跑）
+- `--flush-every N` 每 N 张落盘一次（默认 50，走临时文件 + 原子 rename），跑到一半被 kill 最多损失 N 张
+- 旁边会写一份 `captions.jsonl.meta.json`，记录 **system prompt 原文 + sha256**、`max_tokens`、
+  `n_errors`、耗时 —— 分数与 prompt 的对应关系是可审计的
+- 有 caption 失败时默认退出码 1（不让「一半是错的」被当成可用结果），`--allow-errors` 可放行
+
+> **capture 有一个已知的失败模式**：接口报错时**不会被抛出来**，而是以
+> `__ERROR__` 开头的字符串**存在 caption 字段里**。所以日志干净不代表数据干净 ——
+> 判断一次运行是否成功，要 grep 数据文件而不是看 log。`n_errors` 与退出码就是为了这个。
+
+### 5.6 回归测试
+
+```bash
+bash tests/run_all.sh
+```
+
+全部**离线**：不需要 API key、GPU、网络或真实图片。`test_caption_pipeline.py` 在
+`captioners._post` 上拦截请求，断言实际发出的 payload（caption 格式统一、`--captions-file`
+注入、prompt 接线）。
 
 ---
 
@@ -309,7 +382,8 @@ baselines/
 ```bash
 # CAPTURE（用已存 caption 重新评分）
 python code/run_capture.py --data /path/to/DetailCaps-4870 --captioner <model> \
-    --out /tmp/capture_<model>.json --subset <已存 captions>
+    --out /tmp/capture_<model>.json \
+    --captions-file baselines/capture/<model>/captions.json
 
 # CapsBench（judge-only）
 python code/run_capsbench.py --data /path/to/CapsBench --captioner <model> \
@@ -320,7 +394,7 @@ python code/run_capsbench.py --data /path/to/CapsBench --captioner <model> \
 # CompreCap（把 captions.json 交给官方 evaluate.py，见第 5.3 节）
 ```
 
-**复现时的口径要求**：CapsBench 固定 judge = DeepSeek-V3.2；PerceptionRubrics 固定 judge = gpt-oss-120b；
+**复现时的口径要求**：CapsBench 固定 judge = deepseek-v4-flash；PerceptionRubrics 固定 judge = gpt-oss-120b；
 CompreCap 固定 Llama-3.1-8B-Instruct + all-MiniLM-L6-v2。judge 换版本会系统性移动绝对分。
 
 ---
@@ -338,6 +412,9 @@ CompreCap 固定 Llama-3.1-8B-Instruct + all-MiniLM-L6-v2。judge 换版本会�
 
 - **judge 版本会系统性移动绝对分数**，跨版本比较必须显式记录 judge 版本。
 - **caption 生成端配置会显著影响分数**，同一 benchmark 内所有被测模型必须使用相同数据版本与生成约束。
+  这一点在本 Suite 上实测过：只改 system prompt、其余全部固定，三个 benchmark 的分数就会
+  系统性地移动，且**移动方向在 benchmark 之间并不一致** —— 所以报告里给出分数时
+  必须同时给出生成用的 prompt。`captions.jsonl.meta.json` 里的 prompt sha256 就是为此留的钩子。
 - **CAPTURE 的 `score.json` 保留实测值**，与阶段一报告表格数值有出入时以报告口径为准。
 - `third_party/CompreCap` 有 2 个未拉取的 git submodule（`grounded-sam-osx`、`VISAM`），仅用于分割标注构建，**评测流程不需要**。
 
@@ -363,7 +440,7 @@ CompreCap 固定 Llama-3.1-8B-Instruct + all-MiniLM-L6-v2。judge 换版本会�
 - 数据集：HuggingFace `LiuzhipengUCAS/CAPEval`
 - 仓库内容：`capeval/`（caption 生成、checklist judge、C/P 评分）+ CLI 入口
   `caption.py` / `score.py` / `evaluate.py` / `pipeline.py`，另有 `integrations/{lmms_eval,vlmevalkit}`
-- 注意：仓库体积 **121 MB**，其中 `data/image/` 的示例图占 122 MB，代码本体仅约 1 MB
+- 注意：这个快照约 **129 MB**，其中 `data/image/` 的示例图占 **118 MB**，代码本体仅约 1 MB
 
 ### DOCCI-Critique
 

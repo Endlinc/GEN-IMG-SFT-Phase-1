@@ -4,16 +4,17 @@ Self-contained — uses only stdlib HTTP, so it works without extra SDKs.
 
 Supported captioner names
 --------------------------
-  gpt-5.5
+  gpt-5.6-sol
   claude-sonnet-4-5-20250929
-  qwen3.5-397b-a17b
   doubao-seed-2-1-pro-260628   (routed to Volcano Ark, thinking disabled)
   <any other model ID> — forwarded to OpenAI-compatible endpoint via env vars
 
 Environment variables
 ---------------------
-  OPENAI_API_KEY     API key for OpenAI-compatible endpoint (yunwu.ai)
-  OPENAI_BASE_URL    Base URL for OpenAI-compatible endpoint (default: https://api.openai.com/v1)
+  OPENAI_API_KEY     API key for the OpenAI-compatible endpoint
+  OPENAI_BASE_URL    Base URL for that endpoint (default: https://api.openai.com/v1)
+                     Both Claude and GPT routes go through the same key + base URL
+                     whenever the base URL is not api.openai.com itself.
   ANTHROPIC_API_KEY  API key for Anthropic Messages API
   CLAUDE_MODEL       Claude model override (default: claude-sonnet-4-5-20250929)
 """
@@ -27,7 +28,7 @@ import json
 import os
 import urllib.error
 import urllib.request
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 
 import numpy as np
 
@@ -70,6 +71,16 @@ def _to_b64(image: np.ndarray) -> str:
     return base64.b64encode(buf.getvalue()).decode("ascii")
 
 
+# `_to_b64` always emits JPEG, so the data-URI prefix is defined right next to it
+# and used by the OpenAI-compatible path below. This matters: Anthropic validates
+# the declared media type against the actual bytes and rejects a mismatch with
+# HTTP 400 ("The image was specified using the image/png media type, but the ..."),
+# while OpenAI-compatible routes ignore the label entirely. A hardcoded
+# "image/png" prefix here therefore broke *only* the Claude route, and it looked
+# like a flaky endpoint rather than a bad request.
+JPEG_DATA_URI_PREFIX = "data:image/jpeg;base64,"
+
+
 def _post(url: str, headers: Dict[str, str], payload: Dict[str, Any], retries: int = 8) -> Dict[str, Any]:
     import time, random
     last_err = None
@@ -95,13 +106,13 @@ def _post(url: str, headers: Dict[str, str], payload: Dict[str, Any], retries: i
 
 
 # ---------------------------------------------------------------------------
-# OpenAI-compatible captioner (gpt-5.5, qwen3.5-397b-a17b, doubao, vLLM, ...)
+# OpenAI-compatible captioner (gpt-5.6-sol, doubao, vLLM, ...)
 # ---------------------------------------------------------------------------
 
 class OpenAICaptioner(Captioner):
     def __init__(
         self,
-        model: str = "gpt-5.5",
+        model: str = "gpt-5.6-sol",
         system: str = CAPTIONER_PROMPT,
         api_key: Optional[str] = None,
         base_url: str = "https://api.openai.com/v1",
@@ -125,7 +136,7 @@ class OpenAICaptioner(Captioner):
             "messages": [
                 {"role": "system", "content": self.system},
                 {"role": "user", "content": [
-                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}},
+                    {"type": "image_url", "image_url": {"url": JPEG_DATA_URI_PREFIX + b64}},
                     {"type": "text", "text": "Describe this image in detail."},
                 ]},
             ],
@@ -143,8 +154,9 @@ class OpenAICaptioner(Captioner):
 
 # ---------------------------------------------------------------------------
 # Anthropic Messages API captioner (claude-sonnet-4-5-20250929)
-# Note: yunwu supports Anthropic models via OpenAI-compat endpoint too,
-#       but the native Anthropic API is used when ANTHROPIC_API_KEY is set.
+# Note: a proxy can also serve Anthropic models over an OpenAI-compatible
+#       endpoint, but the native Anthropic API is used when ANTHROPIC_API_KEY
+#       is set and no proxy base URL overrides it.
 # ---------------------------------------------------------------------------
 
 class AnthropicCaptioner(Captioner):
@@ -195,20 +207,38 @@ class AnthropicCaptioner(Captioner):
 # Factory
 # ---------------------------------------------------------------------------
 
+def _key_for(name_lower: str) -> str:
+    """Pick the credential for a model family.
+
+    The proxy issues one key per family, so a single OPENAI_API_KEY cannot cover
+    both the GPT and Claude routes. A family-specific variable wins when set;
+    OPENAI_API_KEY is the fallback, so a single-key endpoint still works.
+    """
+    if name_lower.startswith("claude"):
+        return os.environ.get("CLAUDE_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
+    return os.environ.get("OPENAI_API_KEY", "")
+
+
 def build_captioner(
     name: str,
     device: str = "cuda",           # kept for signature compat, unused for API models
     prompt_override: Optional[str] = None,
+    max_tokens: int = 1024,
 ) -> Captioner:
     """Build a captioner by model name.
 
-    All API models route through yunwu.ai (OPENAI_API_KEY + OPENAI_BASE_URL).
+    All API models route through the OpenAI-compatible endpoint
+    (OPENAI_API_KEY + OPENAI_BASE_URL).
     The `device` arg is accepted but ignored for API models.
+
+    `max_tokens` caps the generated caption. The default (1024) is what the
+    delivered baselines used; raise it for prompts that ask for long captions,
+    or the arm measures truncation rather than prompt effect.
     """
     prompt = prompt_override if prompt_override is not None else CAPTIONER_PROMPT
     name_lower = name.lower().strip()
     base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    api_key  = os.environ.get("OPENAI_API_KEY", "")
+    api_key  = _key_for(name_lower)
 
     # Volcano Ark path for Doubao/Seed models. These are thinking models whose
     # unbounded reasoning starves the visible caption (truncates or empties it),
@@ -219,27 +249,30 @@ def build_captioner(
         ark_url = os.environ.get("ARK_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3")
         return OpenAICaptioner(
             model=name, system=prompt, api_key=ark_key, base_url=ark_url,
+            max_tokens=max_tokens,
             extra_body={"thinking": {"type": "disabled"}},
         )
 
     # Anthropic native API path (only if explicit ANTHROPIC_API_KEY is set
-    # AND no OPENAI_BASE_URL override pointing to yunwu/proxy)
-    _is_proxy = "yunwu" in base_url or "openai.com" not in base_url
+    # AND OPENAI_BASE_URL still points at OpenAI itself, i.e. no proxy override)
+    _is_proxy = "openai.com" not in base_url
     _claude_via_openai = _is_proxy or bool(api_key)
 
     if name_lower in ("claude", "claude-sonnet-4-5-20250929"):
         model = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-5-20250929")
         if _claude_via_openai:
-            return OpenAICaptioner(model=model, system=prompt, api_key=api_key, base_url=base_url)
+            return OpenAICaptioner(model=model, system=prompt, api_key=api_key,
+                                   base_url=base_url, max_tokens=max_tokens)
         return AnthropicCaptioner(
-            model=model, system=prompt,
+            model=model, system=prompt, max_tokens=max_tokens,
             api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
         )
 
     # All other names: pass the model ID straight through to the OpenAI-compatible
-    # endpoint. Covers gpt-5.5, qwen3.5-397b-a17b, and any future model ID —
+    # endpoint. Covers gpt-5.6-sol and any future model ID —
     # original casing is preserved for provider-specific IDs.
-    return OpenAICaptioner(model=name, system=prompt, api_key=api_key, base_url=base_url)
+    return OpenAICaptioner(model=name, system=prompt, api_key=api_key,
+                           base_url=base_url, max_tokens=max_tokens)
 
 
 # ---------------------------------------------------------------------------
@@ -251,12 +284,18 @@ def caption_many(
     items: List[Any],
     max_workers: int = 8,
     label: str = "",
+    on_result: Optional[Callable[[Any, str, int, int], None]] = None,
 ) -> Dict[Any, str]:
     """Caption a list of (key, image) pairs concurrently.
 
     Returns {key: caption}. Failures (after _post's own retries are exhausted)
     are recorded as empty strings so the caller can detect and re-run them.
     Order-independent: each result is keyed, not positional.
+
+    `on_result(key, caption, done, total)` fires once per finished image, from the
+    collecting thread, so a caller can checkpoint a long run to disk. Collection is
+    serialized behind it, so keep the callback cheap -- a checkpoint that rewrites
+    the whole file belongs behind a counter, not on every image.
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
     import threading
@@ -281,4 +320,6 @@ def caption_many(
                 done += 1
                 if done % 10 == 0 or done == total:
                     print(f"[{label}] {done}/{total} captioned", flush=True)
+                if on_result is not None:
+                    on_result(key, cap, done, total)
     return results

@@ -5,8 +5,16 @@ Protocol (arXiv:2606.28322):
   - An LLM-as-judge verifies every Must-Right and Easy-Wrong rubric as boolean.
   - Gated score: fail any Must-Right -> 0; else average Easy-Wrong accuracy.
 
-This script generates predictions in the official format:
-    {"id": "...", "prediction": "...", "reasoning_content": "..."}
+Two caption sources:
+  default                    call the API and caption the images
+  --captions-file PATH       judge captions generated earlier (canonical JSONL; see
+                             caption_io.py), skipping the API entirely
+
+This script writes the predictions in the official format expected by the judge
+    {"id": "...", "prediction": "..."}
+to `<out>/predictions.jsonl`, plus the canonical caption file shared by all four
+benchmarks to `<out>/captions.jsonl`.
+
 Then it either:
   (a) runs the official `scripts/judge.py` from the PerceptionRubrics repo if available,
   (b) or prints the exact command to run it.
@@ -25,29 +33,17 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
-
-import numpy as np
-from PIL import Image
+from typing import Dict, List
 
 sys.path.insert(0, str(Path(__file__).parent))
+from caption_io import (add_caption_args, count_errors, load_injected,
+                        resolve_prompt, save_captions)
 from captioners import build_captioner
+from datasets import iter_items, load_samples, sample_key
 
-
-def load_perceptionrubrics(data_dir: Path) -> List[Dict[str, Any]]:
-    path = data_dir / "perceptionrubrics.json"
-    if not path.exists():
-        raise FileNotFoundError(f"{path} not found. Run download_datasets.py first.")
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _image_to_array(image: Any) -> np.ndarray:
-    if isinstance(image, str):
-        image = Image.open(image).convert("RGB")
-    if isinstance(image, Image.Image):
-        image = np.array(image)
-    return image
+# PerceptionRubrics official predict.py uses this exact prompt
+# (scripts/predict.py:CAPTION_PROMPT) -- it is this benchmark's default.
+PR_PROMPT = "Describe the image in detail."
 
 
 def run(args: argparse.Namespace) -> int:
@@ -56,33 +52,45 @@ def run(args: argparse.Namespace) -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # --subset overrides full 1038-image set with pre-sampled JSON
-    if args.subset:
-        with open(args.subset, encoding="utf-8") as f:
-            samples = json.load(f)
+    samples = load_samples("perceptionrubrics", data_dir, subset=args.subset)
+    if args.limit:
+        samples = samples[: args.limit]
+    ids = [sample_key("perceptionrubrics", s, i) for i, s in enumerate(samples)]
+
+    preds_path = out_dir / "predictions.jsonl"   # official judge input format
+    captions_path = out_dir / "captions.jsonl"   # canonical, shared format
+
+    # --- caption source: injected file, or the API ---
+    injected = load_injected(args)
+    if injected is not None:
+        missing = [k for k in ids if k not in injected]
+        if missing:
+            raise SystemExit(
+                f"[PR] --captions-file covers {len(ids) - len(missing)}/{len(ids)} "
+                f"images; {len(missing)} missing (first: {missing[:3]})")
+        captions: Dict[str, str] = {k: injected[k] for k in ids}
     else:
-        samples = load_perceptionrubrics(data_dir)
-    # PerceptionRubrics official predict.py uses this exact prompt (scripts/predict.py:CAPTION_PROMPT)
-    captioner = build_captioner(args.captioner, device=args.device,
-                                prompt_override="Describe the image in detail.")
+        captioner = build_captioner(args.captioner, device=args.device,
+                                    prompt_override=resolve_prompt(args, default=PR_PROMPT),
+                                    max_tokens=args.max_tokens)
+        from captioners import caption_many
+        items = list(iter_items("perceptionrubrics", data_dir, subset=args.subset,
+                                limit=args.limit))
+        cap_map = caption_many(captioner, items, max_workers=args.workers, label="PR")
+        captions = {k: cap_map.get(k, "") for k, _ in items}
 
-    preds_path = out_dir / "predictions.jsonl"
-    items = []
-    for i, sample in enumerate(samples):
-        if args.limit and i >= args.limit:
-            break
-        sid = str(sample.get("id", i))
-        image = _image_to_array(sample.get("image"))
-        items.append((sid, image))
-
-    from captioners import caption_many
-    cap_map = caption_many(captioner, items, max_workers=args.workers, label="PR")
-    records = [{"id": sid, "prediction": cap_map.get(sid, "")} for sid, _ in items]
-
+    n_err = count_errors(captions)
+    save_captions(captions_path, captions,
+                  meta={"benchmark": "PerceptionRubrics", "captioner": args.captioner,
+                        "n_images": len(captions), "n_errors": n_err,
+                        "source": args.captions_file or "generated"})
+    records: List[Dict[str, str]] = [{"id": k, "prediction": captions[k]} for k in ids]
     with open(preds_path, "w", encoding="utf-8") as f:
         for r in records:
             f.write(json.dumps(r, ensure_ascii=False) + "\n")
-    n_err = sum(1 for r in records if r["prediction"].startswith("__ERROR__"))
-    print(f"[PR] predictions saved: {len(records)} ({n_err} errors) -> {preds_path}", flush=True)
+    print(f"[PR] predictions saved: {len(records)} ({n_err} errors) -> {preds_path}",
+          flush=True)
+    print(f"[PR] captions -> {captions_path}", flush=True)
 
     if getattr(args, "caption_only", False):
         print("[PR] --caption-only set; skipping official judge.", flush=True)
@@ -142,6 +150,7 @@ def main(argv=None) -> int:
     p.add_argument("--limit", type=int, default=0, help="evaluate first N images (0=all)")
     p.add_argument("--caption-only", action="store_true",
                    help="only generate + save predictions, skip official judge")
+    add_caption_args(p)
     args = p.parse_args(argv)
     return run(args)
 

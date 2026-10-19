@@ -9,6 +9,11 @@ Protocol (arXiv:2409.10695, Sec 7):
     answers yes / no / n/a.
   - Judge: Claude-3.5 Sonnet, run 3 times per question, majority vote.
   - Accuracy = fraction matching the reference answer.
+
+Two caption sources:
+  default                    call the API and caption the images
+  --captions-file PATH       judge captions generated earlier (canonical JSONL; see
+                             caption_io.py), skipping the API entirely
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ import io
 import json
 import os
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List
@@ -27,7 +33,10 @@ import numpy as np
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
+from caption_io import (add_caption_args, count_errors, load_injected,
+                        resolve_prompt, save_captions)
 from captioners import build_captioner
+from datasets import load_samples, sample_key
 
 
 def _image_to_b64(image: Any) -> str:
@@ -57,8 +66,15 @@ def _llm_judge(base_url: str, api_key: str, model: str, caption: str, question: 
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.0,
-        "max_tokens": 8,
+        # NOT 8. A thinking judge (deepseek-v4-flash, and the doubao/seed family)
+        # spends its whole budget on `reasoning_content` and returns an EMPTY
+        # `content` with finish_reason=length -- which would silently score every
+        # question "n/a" and collapse accuracy to ~0. 512 leaves room either way.
+        "max_tokens": 512,
     }
+    # DeepSeek's reasoning trace is pure overhead for a one-word answer.
+    if model.lower().startswith("deepseek"):
+        payload["thinking"] = {"type": "disabled"}
     data = json.dumps(payload).encode("utf-8")
 
     import time
@@ -69,7 +85,8 @@ def _llm_judge(base_url: str, api_key: str, model: str, caption: str, question: 
                 req = urllib.request.Request(
                     base_url.rstrip("/") + "/chat/completions",
                     data=data,
-                    headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+                    headers={"Content-Type": "application/json",
+                             "Authorization": f"Bearer {api_key}"},
                 )
                 with urllib.request.urlopen(req, timeout=60) as r:
                     resp = json.loads(r.read().decode("utf-8"))
@@ -81,7 +98,13 @@ def _llm_judge(base_url: str, api_key: str, model: str, caption: str, question: 
                 else:
                     votes.append("n/a")
                 break
-            except (urllib.error.HTTPError, urllib.error.URLError, ConnectionError, TimeoutError) as e:
+            # A 200 carrying an empty or non-JSON body is an upstream hiccup, not
+            # a verdict. It has to be caught here: the caller reads every verdict
+            # through `future.result()`, so one unparseable response among the
+            # ~7k judge calls of a run raises out of the pool and discards the
+            # whole run.
+            except (urllib.error.HTTPError, urllib.error.URLError, ConnectionError,
+                    TimeoutError, json.JSONDecodeError, KeyError, IndexError) as e:
                 if attempt < 4:
                     time.sleep(2 ** attempt)
                 else:
@@ -92,63 +115,60 @@ def _llm_judge(base_url: str, api_key: str, model: str, caption: str, question: 
     return Counter(votes).most_common(1)[0][0]
 
 
-def load_capsbench(data_dir: Path) -> List[Dict[str, Any]]:
-    path = data_dir / "capsbench.json"
-    if not path.exists():
-        raise FileNotFoundError(f"{path} not found. Run download_datasets.py first.")
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
-
-
 def run(args: argparse.Namespace) -> int:
     data_dir = Path(args.data)
     out_dir = Path(args.out).parent
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    samples = load_capsbench(data_dir)
-    captioner = build_captioner(args.captioner, device=args.device)
+    samples = load_samples("capsbench", data_dir)
+    if args.limit:
+        samples = samples[: args.limit]
+    ids = [sample_key("capsbench", s, i) for i, s in enumerate(samples)]
 
-    # Load captions from pre-generated file (list or dict) when in judge-only mode.
-    pre_captions: Dict[str, str] | None = None
-    if getattr(args, "captions_file", ""):
-        cap_path = Path(args.captions_file)
-        if cap_path.suffix == ".jsonl":
-            pre_captions = {}
-            with open(cap_path) as f:
-                for line in f:
-                    row = json.loads(line)
-                    pre_captions[row["image_id"]] = row["caption"]
-        elif cap_path.suffix == ".json":
-            pre_captions = json.load(open(cap_path))
-        else:
-            raise ValueError(f"Unsupported captions format: {cap_path.suffix}")
+    captions_path = Path(args.out).with_suffix(".captions.jsonl")
+
+    # --- caption source: injected file, or the API (lazily, only if needed) ---
+    injected = load_injected(args)
+    captions: Dict[str, str] = {}
+    if injected is not None:
+        missing = [k for k in ids if k not in injected]
+        if missing:
+            raise SystemExit(
+                f"[CapsBench] --captions-file covers {len(ids) - len(missing)}/{len(ids)} "
+                f"images; {len(missing)} missing (first: {missing[:3]})")
+        captions = {k: injected[k] for k in ids}
+        save_captions(captions_path, captions,
+                      meta={"benchmark": "CapsBench", "source": args.captions_file,
+                            "n_images": len(captions),
+                            "n_errors": count_errors(captions)})
+        print(f"[CapsBench] using {len(captions)} pre-generated captions from "
+              f"{args.captions_file}", flush=True)
+    else:
+        captioner = build_captioner(args.captioner, device=args.device,
+                                    prompt_override=resolve_prompt(args),
+                                    max_tokens=args.max_tokens)
 
     # caption-only mode: generate + save captions concurrently, skip judging
-    if getattr(args, "caption_only", False):
-        from captioners import caption_many
-        items = []
-        for i, sample in enumerate(samples):
-            if args.limit and i >= args.limit:
-                break
-            image_id = sample["image_id"]
-            image = sample["image"]
-            if isinstance(image, str) and os.path.exists(image):
-                pil = Image.open(image).convert("RGB")
-            elif isinstance(image, Image.Image):
-                pil = image.convert("RGB")
-            else:
-                pil = image
-            items.append((image_id, np.array(pil)))
-        cap_map = caption_many(captioner, items, max_workers=args.workers, label="CapsBench")
-        cap_path = Path(args.out).with_suffix(".captions.json")
-        with open(cap_path, "w", encoding="utf-8") as f:
-            json.dump({k: cap_map[k] for k, _ in items}, f, indent=2, ensure_ascii=False)
-        n_err = sum(1 for v in cap_map.values() if v.startswith("__ERROR__"))
-        print(f"\n[CapsBench] captions saved: {len(cap_map)} ({n_err} errors) -> {cap_path}", flush=True)
+    if args.caption_only:
+        if injected is None:
+            from captioners import caption_many
+            from datasets import iter_items
+            items = list(iter_items("capsbench", data_dir, limit=args.limit))
+            cap_map = caption_many(captioner, items, max_workers=args.workers, label="CapsBench")
+            captions = {k: cap_map.get(k, "") for k, _ in items}
+            save_captions(captions_path, captions,
+                          meta={"benchmark": "CapsBench", "captioner": args.captioner,
+                                "n_images": len(captions),
+                                "n_errors": count_errors(captions)})
+        n_err = count_errors(captions)
+        print(f"\n[CapsBench] captions saved: {len(captions)} ({n_err} errors) -> "
+              f"{captions_path}", flush=True)
         return 0
 
     judge_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    judge_key = os.environ.get("OPENAI_API_KEY", "")
+    # The judge is a different model family from the captioner, so it has its own
+    # key. Fall back to OPENAI_API_KEY for single-key endpoints.
+    judge_key = os.environ.get("JUDGE_API_KEY") or os.environ.get("OPENAI_API_KEY", "")
     judge_model = args.judge_model
 
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -170,24 +190,17 @@ def run(args: argparse.Namespace) -> int:
     total_questions = 0
 
     for i, sample in enumerate(samples):
-        if args.limit and i >= args.limit:
-            break
-        image_id = sample["image_id"]
+        image_id = sample_key("capsbench", sample, i)
 
         # Use pre-generated caption if available, otherwise generate
-        if pre_captions and image_id in pre_captions:
-            caption = pre_captions[image_id]
+        if injected is not None:
+            caption = captions[image_id]
             print(f"[{i+1}/{len(samples)}] judging {image_id} (pre-captioned) ...", flush=True)
         else:
-            image = sample["image"]
-            if isinstance(image, str) and os.path.exists(image):
-                pil = Image.open(image).convert("RGB")
-            elif isinstance(image, Image.Image):
-                pil = image.convert("RGB")
-            else:
-                pil = image
+            from datasets import to_array
             print(f"[{i+1}/{len(samples)}] captioning {image_id} ...", flush=True)
-            caption = captioner.caption(np.array(pil))
+            caption = captioner.caption(to_array(sample["image"]))
+            captions[image_id] = caption
         caption_ref = [caption]  # mutable ref for closure
 
         questions = sample.get("questions", [])
@@ -211,6 +224,14 @@ def run(args: argparse.Namespace) -> int:
         with open(args.out, "w", encoding="utf-8") as f:
             for r in results:
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
+
+    # keep the canonical caption file for every path that generated in-line
+    if injected is None:
+        save_captions(captions_path, captions,
+                      meta={"benchmark": "CapsBench", "captioner": args.captioner,
+                            "n_images": len(captions),
+                            "n_errors": count_errors(captions)})
+        print(f"[CapsBench] captions saved -> {captions_path}", flush=True)
 
     accuracy = total_correct / max(1, total_questions)
     summary = {
@@ -247,20 +268,19 @@ def main(argv=None) -> int:
     p.add_argument("--data", required=True, help="CapsBench data directory (contains capsbench.json)")
     p.add_argument("--captioner", required=True, help="captioner name (see captioners.py)")
     p.add_argument("--out", required=True, help="output .jsonl path")
-    # Official CapsBench judge is Claude-3.5 Sonnet. It has been replaced by DeepSeek-V3.2
+    # Official CapsBench judge is Claude-3.5 Sonnet. It has been replaced by DeepSeek
     # (comparable capability) because the original judge endpoint is no longer available.
-    # All delivered baselines were produced with this judge.
-    p.add_argument("--judge-model", default="deepseek-v3.2",
+    # deepseek-v3.2 has since been retired upstream; v4-flash is its successor there.
+    p.add_argument("--judge-model", default="deepseek-v4-flash",
                    help="OpenAI-compatible judge for yes/no QA (official paper judge is "
-                        "Claude-3.5 Sonnet, replaced by DeepSeek-V3.2 due to API availability)")
+                        "Claude-3.5 Sonnet, replaced by DeepSeek due to API availability)")
     p.add_argument("--workers", type=int, default=32,
                    help="parallel judge threads per image (default 32)")
     p.add_argument("--device", default="cuda", help="torch device for local models")
     p.add_argument("--limit", type=int, default=0, help="evaluate first N images (0=all)")
     p.add_argument("--caption-only", action="store_true",
                    help="only generate + save captions, skip judging")
-    p.add_argument("--captions-file", default="",
-                   help="path to pre-generated captions .json/.jsonl (judge-only mode)")
+    add_caption_args(p)
     args = p.parse_args(argv)
     return run(args)
 
